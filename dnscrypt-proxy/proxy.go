@@ -390,6 +390,7 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 				return
 			}
 			response, err = ioutil.ReadAll(io.LimitReader(resp.Body, int64(MaxDNSPacketSize)))
+			resp.Body.Close()
 			if err != nil {
 				pluginsState.returnCode = PluginsReturnCodeServerError
 				pluginsState.ApplyLoggingPlugins(&proxy.pluginsGlobals)
