@@ -74,6 +74,7 @@ type Config struct {
 	NetprobeTimeout          int                        `toml:"netprobe_timeout"`
 	MaxWorkers               int                        `toml:"max_workers"`
 	RetryCount               int                        `toml:"retry_count"`
+	IOSMode                  bool                       `toml:"ios_mode"`
 	OfflineMode              bool                       `toml:"offline_mode"`
 	HTTPProxyURL             string                     `toml:"http_proxy"`
 	RefusedCodeInResponses   bool                       `toml:"refused_code_in_responses"`
@@ -115,6 +116,7 @@ func newConfig() Config {
 		RefusedCodeInResponses:   false,
 		MaxWorkers:               25,
 		RetryCount:               5,
+		IOSMode:                  true,
 	}
 }
 
@@ -289,6 +291,7 @@ func ConfigLoad(proxy *Proxy, svcFlag *string, configFilePath string) error {
 	proxy.timeout = time.Duration(config.Timeout) * time.Millisecond
 	proxy.maxClients = config.MaxClients
 
+	proxy.iosMode = config.IOSMode
 	proxy.retryCount = config.RetryCount
 
 	proxy.maxWorkers = config.MaxWorkers

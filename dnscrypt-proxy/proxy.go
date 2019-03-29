@@ -67,6 +67,10 @@ type Proxy struct {
 	logMaxBackups                int
 	refusedCodeInResponses       bool
 
+	ReadyCallback chan bool
+	readyFired    bool
+
+	iosMode    bool
 	retryCount int
 	maxWorkers int
 	workerPool *limiter.ConcurrencyLimiter
@@ -164,6 +168,12 @@ func (proxy *Proxy) StartProxy() {
 		if !proxy.child {
 			ServiceManagerReadyNotify()
 		}
+
+		if !proxy.readyFired {
+			proxy.readyFired = true
+			proxy.ReadyCallback <- true
+			close(proxy.ReadyCallback)
+		}
 	} else if err != nil {
 		dlog.Error(err)
 		dlog.Notice("dnscrypt-proxy is waiting for at least one server to be reachable")
@@ -177,7 +187,12 @@ func (proxy *Proxy) StartProxy() {
 					delay = proxy.certRefreshDelayAfterFailure
 				}
 				clocksmith.Sleep(delay)
-				proxy.serversInfo.refresh(proxy)
+				ls, err := proxy.serversInfo.refresh(proxy)
+				if !proxy.readyFired && ls > 0 && err == nil {
+					proxy.readyFired = true
+					proxy.ReadyCallback <- true
+					close(proxy.ReadyCallback)
+				}
 			}
 		}()
 	}
@@ -498,6 +513,8 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 
 func NewProxy() Proxy {
 	return Proxy{
-		serversInfo: ServersInfo{lbStrategy: DefaultLBStrategy},
+		serversInfo:   ServersInfo{lbStrategy: DefaultLBStrategy},
+		readyFired:    false,
+		ReadyCallback: make(chan bool),
 	}
 }
