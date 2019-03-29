@@ -50,6 +50,10 @@ type XTransport struct {
 var DefaultKeepAlive = 5 * time.Second
 var DefaultTimeout = 30 * time.Second
 
+type cachePrefixContextKey string
+
+const cachePrefixKey = cachePrefixContextKey("cachePrefix")
+
 func NewXTransport() *XTransport {
 	xTransport := XTransport{
 		cachedIPs:                CachedIPs{cache: make(map[string]string)},
@@ -90,7 +94,13 @@ func (xTransport *XTransport) rebuildTransport() {
 			host, port := ExtractHostAndPort(addrStr, stamps.DefaultPort)
 			ipOnly := host
 			xTransport.cachedIPs.RLock()
-			cachedIP := xTransport.cachedIPs.cache[host]
+
+			cacheKey := host
+			if v := ctx.Value(cachePrefixKey); v != nil {
+				cacheKey = v.(string) + "#" + host
+			}
+
+			cachedIP := xTransport.cachedIPs.cache[cacheKey]
 			xTransport.cachedIPs.RUnlock()
 			if len(cachedIP) > 0 {
 				ipOnly = cachedIP
@@ -164,7 +174,7 @@ func (xTransport *XTransport) resolve(dnsClient *dns.Client, host string, resolv
 	return nil, err
 }
 
-func (xTransport *XTransport) Fetch(method string, url *url.URL, accept string, contentType string, body *[]byte, timeout time.Duration, padding *string) (*http.Response, time.Duration, error) {
+func (xTransport *XTransport) Fetch(method string, url *url.URL, accept string, contentType string, body *[]byte, timeout time.Duration, padding *string, cachePrefix string) (*http.Response, time.Duration, error) {
 	if timeout <= 0 {
 		timeout = xTransport.timeout
 	}
@@ -201,8 +211,12 @@ func (xTransport *XTransport) Fetch(method string, url *url.URL, accept string, 
 	var err error
 	host := url.Host
 	xTransport.cachedIPs.RLock()
-	cachedIP := xTransport.cachedIPs.cache[host]
+	cachedIP := xTransport.cachedIPs.cache[cachePrefix+"#"+host]
 	xTransport.cachedIPs.RUnlock()
+
+	ctx := context.WithValue(req.Context(), cachePrefixKey, cachePrefix)
+	req = req.WithContext(ctx)
+
 	if !xTransport.ignoreSystemDNS || len(cachedIP) > 0 {
 		var resp *http.Response
 		start := time.Now()
@@ -211,10 +225,14 @@ func (xTransport *XTransport) Fetch(method string, url *url.URL, accept string, 
 		if err == nil {
 			if resp == nil {
 				err = errors.New("Webserver returned an error")
+				dlog.Debug("xTransport Fetch - cached/system client.Do fail [empty response]")
 			} else if resp.StatusCode < 200 || resp.StatusCode > 299 {
 				err = fmt.Errorf("Webserver returned code %d", resp.StatusCode)
+				dlog.Debugf("xTransport Fetch - cached/system client.Do return code fail [%d]", resp.StatusCode)
 			}
 			return resp, rtt, err
+		} else {
+			dlog.Debugf("xTransport Fetch - cached/system client.Do fail [%s]", err.Error())
 		}
 		(*xTransport.transport).CloseIdleConnections()
 		dlog.Debugf("[%s]: [%s]", req.URL, err)
@@ -233,13 +251,15 @@ func (xTransport *XTransport) Fetch(method string, url *url.URL, accept string, 
 	dnsClient := new(dns.Client)
 	foundIP, err := xTransport.resolve(dnsClient, host, xTransport.fallbackResolver)
 	if err != nil {
+		dlog.Debugf("xTransport Fetch - server address resolve fail [%s]", err.Error())
 		return nil, 0, err
 	}
 	if foundIP == nil {
+		dlog.Debugf("xTransport Fetch - no IP found for [%s]", host)
 		return nil, 0, fmt.Errorf("No IP found for [%s]", host)
 	}
 	xTransport.cachedIPs.Lock()
-	xTransport.cachedIPs.cache[host] = *foundIP
+	xTransport.cachedIPs.cache[cachePrefix+"#"+host] = *foundIP
 	xTransport.cachedIPs.Unlock()
 	dlog.Debugf("[%s] IP address [%s] added to the cache", host, *foundIP)
 
@@ -249,7 +269,9 @@ func (xTransport *XTransport) Fetch(method string, url *url.URL, accept string, 
 	if err == nil {
 		if resp == nil {
 			err = errors.New("Webserver returned an error")
+			dlog.Debugf("xTransport Fetch - client.Do fail [empty response]")
 		} else if resp.StatusCode < 200 || resp.StatusCode > 299 {
+			dlog.Debugf("xTransport Fetch - client.Do return code fail [%d]", resp.StatusCode)
 			err = fmt.Errorf("Webserver returned code %d", resp.StatusCode)
 		}
 	} else {
@@ -266,16 +288,16 @@ func (xTransport *XTransport) Fetch(method string, url *url.URL, accept string, 
 	return resp, rtt, err
 }
 
-func (xTransport *XTransport) Get(url *url.URL, accept string, timeout time.Duration) (*http.Response, time.Duration, error) {
-	return xTransport.Fetch("GET", url, accept, "", nil, timeout, nil)
+func (xTransport *XTransport) Get(url *url.URL, accept string, timeout time.Duration, cachePrefix string) (*http.Response, time.Duration, error) {
+	return xTransport.Fetch("GET", url, accept, "", nil, timeout, nil, cachePrefix)
 }
 
-func (xTransport *XTransport) Post(url *url.URL, accept string, contentType string, body *[]byte, timeout time.Duration, padding *string) (*http.Response, time.Duration, error) {
+func (xTransport *XTransport) Post(url *url.URL, accept string, contentType string, body *[]byte, timeout time.Duration, padding *string, cachePrefix string) (*http.Response, time.Duration, error) {
 
-	return xTransport.Fetch("POST", url, accept, contentType, body, timeout, padding)
+	return xTransport.Fetch("POST", url, accept, contentType, body, timeout, padding, cachePrefix)
 }
 
-func (xTransport *XTransport) DoHQuery(useGet bool, url *url.URL, body []byte, timeout time.Duration) (*http.Response, time.Duration, error) {
+func (xTransport *XTransport) DoHQuery(useGet bool, url *url.URL, body []byte, timeout time.Duration, cachePrefix string) (*http.Response, time.Duration, error) {
 	padLen := 63 - (len(body)+63)&63
 	padding := xTransport.makePad(padLen)
 	dataType := "application/dns-message"
@@ -286,9 +308,9 @@ func (xTransport *XTransport) DoHQuery(useGet bool, url *url.URL, body []byte, t
 		qs.Add("dns", encBody)
 		url2 := *url
 		url2.RawQuery = qs.Encode()
-		return xTransport.Get(&url2, dataType, timeout)
+		return xTransport.Get(&url2, dataType, timeout, cachePrefix)
 	}
-	return xTransport.Post(url, dataType, dataType, &body, timeout, padding)
+	return xTransport.Post(url, dataType, dataType, &body, timeout, padding, cachePrefix)
 }
 
 func (xTransport *XTransport) makePad(padLen int) *string {

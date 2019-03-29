@@ -217,6 +217,7 @@ func (serversInfo *ServersInfo) fetchServerInfo(proxy *Proxy, name string, stamp
 }
 
 func (serversInfo *ServersInfo) fetchDNSCryptServerInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, isNew bool) (ServerInfo, error) {
+	dlog.Debugf("[%s] fetch DNSCrypt server info - start", name)
 	if len(stamp.ServerPk) != ed25519.PublicKeySize {
 		serverPk, err := hex.DecodeString(strings.Replace(string(stamp.ServerPk), ":", "", -1))
 		if err != nil || len(serverPk) != ed25519.PublicKeySize {
@@ -227,16 +228,20 @@ func (serversInfo *ServersInfo) fetchDNSCryptServerInfo(proxy *Proxy, name strin
 	}
 	certInfo, rtt, err := FetchCurrentDNSCryptCert(proxy, &name, proxy.mainProto, stamp.ServerPk, stamp.ServerAddrStr, stamp.ProviderName, isNew)
 	if err != nil {
+		dlog.Debugf("[%s] refresh DNSCrypt server info - FetchCurrentDNSCryptCert fail [%s]", name, err.Error())
 		return ServerInfo{}, err
 	}
 	remoteUDPAddr, err := net.ResolveUDPAddr("udp", stamp.ServerAddrStr)
 	if err != nil {
+		dlog.Debugf("[%s] refresh DNSCrypt server info - ResolveUDPAddr fail [%s]", name, err.Error())
 		return ServerInfo{}, err
 	}
 	remoteTCPAddr, err := net.ResolveTCPAddr("tcp", stamp.ServerAddrStr)
 	if err != nil {
+		dlog.Debugf("[%s] refresh DNSCrypt server info - ResolveTCPAddr fail [%s]", name, err.Error())
 		return ServerInfo{}, err
 	}
+	dlog.Debugf("[%s] refresh DNSCrypt server info - OK", name)
 	return ServerInfo{
 		Proto:              stamps.StampProtoTypeDNSCrypt,
 		MagicQuery:         certInfo.MagicQuery,
@@ -252,11 +257,12 @@ func (serversInfo *ServersInfo) fetchDNSCryptServerInfo(proxy *Proxy, name strin
 }
 
 func (serversInfo *ServersInfo) fetchDoHServerInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, isNew bool) (ServerInfo, error) {
+	dlog.Debugf("[%s] fetch DoH server info - start", name)
 	if len(stamp.ServerAddrStr) > 0 {
 		addrStr := stamp.ServerAddrStr
 		ipOnly := addrStr[:strings.LastIndex(addrStr, ":")]
 		proxy.xTransport.cachedIPs.Lock()
-		proxy.xTransport.cachedIPs.cache[stamp.ProviderName] = ipOnly
+		proxy.xTransport.cachedIPs.cache[name+"#"+stamp.ProviderName] = ipOnly
 		proxy.xTransport.cachedIPs.Unlock()
 	}
 	url := &url.URL{
@@ -268,19 +274,21 @@ func (serversInfo *ServersInfo) fetchDoHServerInfo(proxy *Proxy, name string, st
 		0xca, 0xfe, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, 0x29, 0x10, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00,
 	}
 	useGet := false
-	if _, _, err := proxy.xTransport.DoHQuery(useGet, url, body, proxy.timeout); err != nil {
+	if _, _, err := proxy.xTransport.DoHQuery(useGet, url, body, proxy.timeout, name); err != nil {
 		useGet = true
-		if _, _, err := proxy.xTransport.DoHQuery(useGet, url, body, proxy.timeout); err != nil {
+		if _, _, err := proxy.xTransport.DoHQuery(useGet, url, body, proxy.timeout, name); err != nil {
 			return ServerInfo{}, err
 		}
 		dlog.Debugf("Server [%s] doesn't appear to support POST; falling back to GET requests", name)
 	}
-	resp, rtt, err := proxy.xTransport.DoHQuery(useGet, url, body, proxy.timeout)
+	resp, rtt, err := proxy.xTransport.DoHQuery(useGet, url, body, proxy.timeout, name)
 	if err != nil {
+		dlog.Debugf("[%s] fetch DoH server info - DoHQuery fail [%s]", name, err.Error())
 		return ServerInfo{}, err
 	}
 	tls := resp.TLS
 	if tls == nil || !tls.HandshakeComplete {
+		dlog.Debugf("[%s] fetch DoH server info - TLS handshake fail", name)
 		return ServerInfo{}, errors.New("TLS handshake failed")
 	}
 	dlog.Infof("[%s] TLS version: %x - Protocol: %v - Cipher suite: %v", name, tls.Version, tls.NegotiatedProtocol, tls.CipherSuite)
