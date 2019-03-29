@@ -171,7 +171,7 @@ type ServerSummary struct {
 
 func findConfigFile(configFile *string) (string, error) {
 	if _, err := os.Stat(*configFile); os.IsNotExist(err) {
-		cdLocal()
+		cdLocal(*configFile)
 		if _, err := os.Stat(*configFile); err != nil {
 			return "", err
 		}
@@ -186,14 +186,14 @@ func findConfigFile(configFile *string) (string, error) {
 	return path.Join(pwd, *configFile), nil
 }
 
-func ConfigLoad(proxy *Proxy, svcFlag *string) error {
+func ConfigLoad(proxy *Proxy, svcFlag *string, configFilePath string) error {
 	version := flag.Bool("version", false, "print current proxy version")
 	resolve := flag.String("resolve", "", "resolve a name using system libraries")
 	list := flag.Bool("list", false, "print the list of available resolvers for the enabled filters")
 	listAll := flag.Bool("list-all", false, "print the complete list of available resolvers, ignoring filters")
 	jsonOutput := flag.Bool("json", false, "output list as JSON")
 	check := flag.Bool("check", false, "check the configuration file and exit")
-	configFile := flag.String("config", DefaultConfigFileName, "Path to the configuration file")
+	configFile := flag.String("config", configFilePath, "Path to the configuration file")
 	child := flag.Bool("child", false, "Invokes program as a child process")
 	netprobeTimeoutOverride := flag.Int("netprobe-timeout", 60, "Override the netprobe timeout")
 
@@ -592,13 +592,8 @@ func cdFileDir(fileName string) {
 	os.Chdir(filepath.Dir(fileName))
 }
 
-func cdLocal() {
-	exeFileName, err := os.Executable()
-	if err != nil {
-		dlog.Warnf("Unable to determine the executable directory: [%s] -- You will need to specify absolute paths in the configuration file", err)
-		return
-	}
-	os.Chdir(filepath.Dir(exeFileName))
+func cdLocal(ex string) {
+	os.Chdir(filepath.Dir(ex))
 }
 
 func netProbe(address string, timeout int) error {
