@@ -67,6 +67,7 @@ type Proxy struct {
 	logMaxBackups                int
 	refusedCodeInResponses       bool
 
+	retryCount int
 	maxWorkers int
 	workerPool *limiter.ConcurrencyLimiter
 }
@@ -217,7 +218,17 @@ func (proxy *Proxy) udpListener(clientPc *net.UDPConn) {
 				return
 			}
 			defer proxy.clientsCountDec()
-			proxy.processIncomingQuery(proxy.serversInfo.getOne(), "udp", proxy.mainProto, packet, &clientAddr, clientPc)
+
+			attempt := 0
+			for {
+				err := proxy.processIncomingQuery(proxy.serversInfo.getOne(), "udp", proxy.mainProto, packet, &clientAddr, clientPc, attempt)
+
+				if err == nil || proxy.retryCount == 0 || attempt >= proxy.retryCount {
+					break
+				} else {
+					attempt++
+				}
+			}
 		})
 	}
 }
@@ -252,7 +263,17 @@ func (proxy *Proxy) tcpListener(acceptPc *net.TCPListener) {
 				return
 			}
 			clientAddr := clientPc.RemoteAddr()
-			proxy.processIncomingQuery(proxy.serversInfo.getOne(), "tcp", "tcp", packet, &clientAddr, clientPc)
+
+			attempt := 0
+			for {
+				err := proxy.processIncomingQuery(proxy.serversInfo.getOne(), "tcp", "tcp", packet, &clientAddr, clientPc, attempt)
+
+				if err == nil || proxy.retryCount == 0 || attempt >= proxy.retryCount {
+					break
+				} else {
+					attempt++
+				}
+			}
 		})
 	}
 }
@@ -331,27 +352,40 @@ func (proxy *Proxy) clientsCountDec() {
 	}
 }
 
-func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto string, serverProto string, query []byte, clientAddr *net.Addr, clientPc net.Conn) {
+func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto string, serverProto string, query []byte, clientAddr *net.Addr, clientPc net.Conn, attempt int) error {
 	if len(query) < MinDNSPacketSize {
-		return
+		return nil
 	}
 	pluginsState := NewPluginsState(proxy, clientProto, clientAddr)
-	query, _ = pluginsState.ApplyQueryPlugins(&proxy.pluginsGlobals, query)
+
 	var response []byte
 	var err error
+	if proxy.retryCount > 0 && attempt >= proxy.retryCount { //TODO: plugin?
+		refMsg, err := RefusedResponseFromQuery(query, proxy.refusedCodeInResponses)
+		if err != nil {
+			return nil //TODO: wtf? O_o should't happen
+		}
+		response, err = refMsg.PackBuffer(response)
+		if err != nil {
+			return nil //TODO: wtf? O_o should't happen
+		}
+	}
+
+	query, _ = pluginsState.ApplyQueryPlugins(&proxy.pluginsGlobals, query)
+
 	if pluginsState.action != PluginsActionForward {
 		if pluginsState.synthResponse != nil {
 			response, err = pluginsState.synthResponse.PackBuffer(response)
 			if err != nil {
 				pluginsState.returnCode = PluginsReturnCodeParseError
 				pluginsState.ApplyLoggingPlugins(&proxy.pluginsGlobals)
-				return
+				return nil
 			}
 		}
 		if pluginsState.action == PluginsActionDrop {
 			pluginsState.returnCode = PluginsReturnCodeDrop
 			pluginsState.ApplyLoggingPlugins(&proxy.pluginsGlobals)
-			return
+			return nil
 		}
 	} else {
 		pluginsState.returnCode = PluginsReturnCodeForward
@@ -363,7 +397,7 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 			if err != nil {
 				pluginsState.returnCode = PluginsReturnCodeParseError
 				pluginsState.ApplyLoggingPlugins(&proxy.pluginsGlobals)
-				return
+				return nil
 			}
 			serverInfo.noticeBegin(proxy)
 			if serverProto == "udp" {
@@ -375,7 +409,7 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 				pluginsState.returnCode = PluginsReturnCodeServerError
 				pluginsState.ApplyLoggingPlugins(&proxy.pluginsGlobals)
 				serverInfo.noticeFailure(proxy)
-				return
+				return err
 			}
 		} else if serverInfo.Proto == stamps.StampProtoTypeDoH {
 			tid := TransactionID(query)
@@ -387,7 +421,7 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 				pluginsState.returnCode = PluginsReturnCodeServerError
 				pluginsState.ApplyLoggingPlugins(&proxy.pluginsGlobals)
 				serverInfo.noticeFailure(proxy)
-				return
+				return err
 			}
 			response, err = ioutil.ReadAll(io.LimitReader(resp.Body, int64(MaxDNSPacketSize)))
 			resp.Body.Close()
@@ -395,7 +429,7 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 				pluginsState.returnCode = PluginsReturnCodeServerError
 				pluginsState.ApplyLoggingPlugins(&proxy.pluginsGlobals)
 				serverInfo.noticeFailure(proxy)
-				return
+				return err
 			}
 			if len(response) >= MinDNSPacketSize {
 				SetTransactionID(response, tid)
@@ -407,14 +441,14 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 			pluginsState.returnCode = PluginsReturnCodeParseError
 			pluginsState.ApplyLoggingPlugins(&proxy.pluginsGlobals)
 			serverInfo.noticeFailure(proxy)
-			return
+			return nil
 		}
 		response, err = pluginsState.ApplyResponsePlugins(&proxy.pluginsGlobals, response, ttl)
 		if err != nil {
 			pluginsState.returnCode = PluginsReturnCodeParseError
 			pluginsState.ApplyLoggingPlugins(&proxy.pluginsGlobals)
 			serverInfo.noticeFailure(proxy)
-			return
+			return nil
 		}
 		if rcode := Rcode(response); rcode == 2 { // SERVFAIL
 			dlog.Infof("Server [%v] returned temporary error code [%v] -- Upstream server may be experiencing connectivity issues", serverInfo.Name, rcode)
@@ -429,7 +463,7 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 		if serverInfo != nil {
 			serverInfo.noticeFailure(proxy)
 		}
-		return
+		return nil
 	}
 	if clientProto == "udp" {
 		if len(response) > MaxDNSUDPPacketSize {
@@ -437,7 +471,7 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 			if err != nil {
 				pluginsState.returnCode = PluginsReturnCodeParseError
 				pluginsState.ApplyLoggingPlugins(&proxy.pluginsGlobals)
-				return
+				return nil
 			}
 		}
 		clientPc.(net.PacketConn).WriteTo(response, *clientAddr)
@@ -454,11 +488,12 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 			if serverInfo != nil {
 				serverInfo.noticeFailure(proxy)
 			}
-			return
+			return nil
 		}
 		clientPc.Write(response)
 	}
 	pluginsState.ApplyLoggingPlugins(&proxy.pluginsGlobals)
+	return nil
 }
 
 func NewProxy() Proxy {
