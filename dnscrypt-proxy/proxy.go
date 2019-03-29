@@ -13,6 +13,8 @@ import (
 	clocksmith "github.com/jedisct1/go-clocksmith"
 	stamps "github.com/jedisct1/go-dnsstamps"
 	"golang.org/x/crypto/curve25519"
+
+	"github.com/korovkin/limiter"
 )
 
 type Proxy struct {
@@ -64,9 +66,13 @@ type Proxy struct {
 	logMaxAge                    int
 	logMaxBackups                int
 	refusedCodeInResponses       bool
+
+	maxWorkers int
+	workerPool *limiter.ConcurrencyLimiter
 }
 
 func (proxy *Proxy) StartProxy() {
+	proxy.workerPool = limiter.NewConcurrencyLimiter(proxy.maxWorkers)
 	proxy.questionSizeEstimator = NewQuestionSizeEstimator()
 	if _, err := rand.Read(proxy.proxySecretKey[:]); err != nil {
 		dlog.Fatal(err)
@@ -205,14 +211,14 @@ func (proxy *Proxy) udpListener(clientPc *net.UDPConn) {
 			return
 		}
 		packet := buffer[:length]
-		go func() {
+		proxy.workerPool.Execute(func() {
 			if !proxy.clientsCountInc() {
 				dlog.Warnf("Too many connections (max=%d)", proxy.maxClients)
 				return
 			}
 			defer proxy.clientsCountDec()
 			proxy.processIncomingQuery(proxy.serversInfo.getOne(), "udp", proxy.mainProto, packet, &clientAddr, clientPc)
-		}()
+		})
 	}
 }
 
@@ -233,7 +239,7 @@ func (proxy *Proxy) tcpListener(acceptPc *net.TCPListener) {
 		if err != nil {
 			continue
 		}
-		go func() {
+		proxy.workerPool.Execute(func() {
 			defer clientPc.Close()
 			if !proxy.clientsCountInc() {
 				dlog.Warnf("Too many connections (max=%d)", proxy.maxClients)
@@ -247,7 +253,7 @@ func (proxy *Proxy) tcpListener(acceptPc *net.TCPListener) {
 			}
 			clientAddr := clientPc.RemoteAddr()
 			proxy.processIncomingQuery(proxy.serversInfo.getOne(), "tcp", "tcp", packet, &clientAddr, clientPc)
-		}()
+		})
 	}
 }
 

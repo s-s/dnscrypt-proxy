@@ -72,6 +72,7 @@ type Config struct {
 	TLSCipherSuite           []uint16                   `toml:"tls_cipher_suite"`
 	NetprobeAddress          string                     `toml:"netprobe_address"`
 	NetprobeTimeout          int                        `toml:"netprobe_timeout"`
+	MaxWorkers               int                        `toml:"max_workers"`
 	OfflineMode              bool                       `toml:"offline_mode"`
 	HTTPProxyURL             string                     `toml:"http_proxy"`
 	RefusedCodeInResponses   bool                       `toml:"refused_code_in_responses"`
@@ -111,6 +112,7 @@ func newConfig() Config {
 		NetprobeTimeout:          60,
 		OfflineMode:              false,
 		RefusedCodeInResponses:   false,
+		MaxWorkers:               25,
 	}
 }
 
@@ -284,6 +286,9 @@ func ConfigLoad(proxy *Proxy, svcFlag *string, configFilePath string) error {
 	proxy.refusedCodeInResponses = config.RefusedCodeInResponses
 	proxy.timeout = time.Duration(config.Timeout) * time.Millisecond
 	proxy.maxClients = config.MaxClients
+
+	proxy.maxWorkers = config.MaxWorkers
+
 	proxy.mainProto = "udp"
 	if config.ForceTCP {
 		proxy.mainProto = "tcp"
