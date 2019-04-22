@@ -21,63 +21,63 @@ import (
 )
 
 type Config struct {
-	LogLevel                 int      `toml:"log_level"`
-	LogFile                  *string  `toml:"log_file"`
-	UseSyslog                bool     `toml:"use_syslog"`
-	ServerNames              []string `toml:"server_names"`
-	DisabledServerNames      []string `toml:"disabled_server_names"`
-	ListenAddresses          []string `toml:"listen_addresses"`
-	Daemonize                bool
-	UserName                 string `toml:"user_name"`
-	ForceTCP                 bool   `toml:"force_tcp"`
-	Timeout                  int    `toml:"timeout"`
-	KeepAlive                int    `toml:"keepalive"`
-	Proxy                    string `toml:"proxy"`
-	CertRefreshDelay         int    `toml:"cert_refresh_delay"`
-	CertIgnoreTimestamp      bool   `toml:"cert_ignore_timestamp"`
-	EphemeralKeys            bool   `toml:"dnscrypt_ephemeral_keys"`
-	LBStrategy               string `toml:"lb_strategy"`
-	BlockIPv6                bool   `toml:"block_ipv6"`
-	Cache                    bool
-	CacheSize                int                        `toml:"cache_size"`
-	CacheNegTTL              uint32                     `toml:"cache_neg_ttl"`
-	CacheNegMinTTL           uint32                     `toml:"cache_neg_min_ttl"`
-	CacheNegMaxTTL           uint32                     `toml:"cache_neg_max_ttl"`
-	CacheMinTTL              uint32                     `toml:"cache_min_ttl"`
-	CacheMaxTTL              uint32                     `toml:"cache_max_ttl"`
-	QueryLog                 QueryLogConfig             `toml:"query_log"`
-	NxLog                    NxLogConfig                `toml:"nx_log"`
-	BlockName                BlockNameConfig            `toml:"blacklist"`
-	WhitelistName            WhitelistNameConfig        `toml:"whitelist"`
-	BlockIP                  BlockIPConfig              `toml:"ip_blacklist"`
-	ForwardFile              string                     `toml:"forwarding_rules"`
-	CloakFile                string                     `toml:"cloaking_rules"`
-	ServersConfig            map[string]StaticConfig    `toml:"static"`
-	SourcesConfig            map[string]SourceConfig    `toml:"sources"`
-	SourceRequireDNSSEC      bool                       `toml:"require_dnssec"`
-	SourceRequireNoLog       bool                       `toml:"require_nolog"`
-	SourceRequireNoFilter    bool                       `toml:"require_nofilter"`
-	SourceDNSCrypt           bool                       `toml:"dnscrypt_servers"`
-	SourceDoH                bool                       `toml:"doh_servers"`
-	SourceIPv4               bool                       `toml:"ipv4_servers"`
-	SourceIPv6               bool                       `toml:"ipv6_servers"`
-	MaxClients               uint32                     `toml:"max_clients"`
-	FallbackResolver         string                     `toml:"fallback_resolver"`
-	IgnoreSystemDNS          bool                       `toml:"ignore_system_dns"`
-	AllWeeklyRanges          map[string]WeeklyRangesStr `toml:"schedules"`
-	LogMaxSize               int                        `toml:"log_files_max_size"`
-	LogMaxAge                int                        `toml:"log_files_max_age"`
-	LogMaxBackups            int                        `toml:"log_files_max_backups"`
-	TLSDisableSessionTickets bool                       `toml:"tls_disable_session_tickets"`
-	TLSCipherSuite           []uint16                   `toml:"tls_cipher_suite"`
-	NetprobeAddress          string                     `toml:"netprobe_address"`
-	NetprobeTimeout          int                        `toml:"netprobe_timeout"`
-	MaxWorkers               int                        `toml:"max_workers"`
-	RetryCount               int                        `toml:"retry_count"`
-	IOSMode                  bool                       `toml:"ios_mode"`
-	OfflineMode              bool                       `toml:"offline_mode"`
-	HTTPProxyURL             string                     `toml:"http_proxy"`
-	RefusedCodeInResponses   bool                       `toml:"refused_code_in_responses"`
+	LogLevel                 int                        `toml:"log_level,omitempty" json:"log_level,omitempty"`
+	LogFile                  *string                    `toml:"log_file,omitempty" json:"log_file,omitempty"`
+	UseSyslog                bool                       `toml:"use_syslog,omitempty" json:"use_syslog,omitempty"`
+	ServerNames              []string                   `toml:"server_names,omitempty" json:"server_names,omitempty"`
+	DisabledServerNames      []string                   `toml:"disabled_server_names,omitempty" json:"disabled_server_names,omitempty"`
+	ListenAddresses          []string                   `toml:"listen_addresses,omitempty" json:"listen_addresses,omitempty"`
+	Daemonize                bool                       `toml:"-" json:"-"`
+	UserName                 string                     `toml:"user_name,omitempty" json:"user_name,omitempty"`
+	ForceTCP                 bool                       `toml:"force_tcp,omitempty" json:"force_tcp,omitempty"`
+	Timeout                  int                        `toml:"timeout,omitempty" json:"timeout,omitempty"`
+	KeepAlive                int                        `toml:"keepalive,omitempty" json:"keepalive,omitempty"`
+	Proxy                    string                     `toml:"proxy,omitempty" json:"proxy,omitempty"`
+	CertRefreshDelay         int                        `toml:"cert_refresh_delay,omitempty" json:"cert_refresh_delay,omitempty"`
+	CertIgnoreTimestamp      bool                       `toml:"cert_ignore_timestamp,omitempty" json:"cert_ignore_timestamp,omitempty"`
+	EphemeralKeys            bool                       `toml:"dnscrypt_ephemeral_keys,omitempty" json:"dnscrypt_ephemeral_keys,omitempty"`
+	LBStrategy               string                     `toml:"lb_strategy,omitempty" json:"lb_strategy,omitempty"`
+	BlockIPv6                bool                       `toml:"block_ipv6,omitempty" json:"block_ipv6,omitempty"`
+	Cache                    bool                       `toml:"cache,omitempty" json:"cache,omitempty"`
+	CacheSize                int                        `toml:"cache_size,omitempty" json:"cache_size,omitempty"`
+	CacheNegTTL              uint32                     `toml:"cache_neg_ttl,omitempty" json:"cache_neg_ttl,omitempty"`
+	CacheNegMinTTL           uint32                     `toml:"cache_neg_min_ttl,omitempty" json:"cache_neg_min_ttl,omitempty"`
+	CacheNegMaxTTL           uint32                     `toml:"cache_neg_max_ttl,omitempty" json:"cache_neg_max_ttl,omitempty"`
+	CacheMinTTL              uint32                     `toml:"cache_min_ttl,omitempty" json:"cache_min_ttl,omitempty"`
+	CacheMaxTTL              uint32                     `toml:"cache_max_ttl,omitempty" json:"cache_max_ttl,omitempty"`
+	QueryLog                 QueryLogConfig             `toml:"query_log,omitempty" json:"query_log,omitempty"`
+	NxLog                    NxLogConfig                `toml:"nx_log,omitempty" json:"nx_log,omitempty"`
+	BlockName                BlockNameConfig            `toml:"blacklist,omitempty" json:"blacklist,omitempty"`
+	WhitelistName            WhitelistNameConfig        `toml:"whitelist,omitempty" json:"whitelist,omitempty"`
+	BlockIP                  BlockIPConfig              `toml:"ip_blacklist,omitempty" json:"ip_blacklist,omitempty"`
+	ForwardFile              string                     `toml:"forwarding_rules,omitempty" json:"forwarding_rules,omitempty"`
+	CloakFile                string                     `toml:"cloaking_rules,omitempty" json:"cloaking_rules,omitempty"`
+	ServersConfig            map[string]StaticConfig    `toml:"static,omitempty" json:"static,omitempty"`
+	SourcesConfig            map[string]SourceConfig    `toml:"sources,omitempty" json:"sources,omitempty"`
+	SourceRequireDNSSEC      bool                       `toml:"require_dnssec,omitempty" json:"require_dnssec,omitempty"`
+	SourceRequireNoLog       bool                       `toml:"require_nolog,omitempty" json:"require_nolog,omitempty"`
+	SourceRequireNoFilter    bool                       `toml:"require_nofilter,omitempty" json:"require_nofilter,omitempty"`
+	SourceDNSCrypt           bool                       `toml:"dnscrypt_servers,omitempty" json:"dnscrypt_servers,omitempty"`
+	SourceDoH                bool                       `toml:"doh_servers,omitempty" json:"doh_servers,omitempty"`
+	SourceIPv4               bool                       `toml:"ipv4_servers,omitempty" json:"ipv4_servers,omitempty"`
+	SourceIPv6               bool                       `toml:"ipv6_servers,omitempty" json:"ipv6_servers,omitempty"`
+	MaxClients               uint32                     `toml:"max_clients,omitempty" json:"max_clients,omitempty"`
+	FallbackResolver         string                     `toml:"fallback_resolver,omitempty" json:"fallback_resolver,omitempty"`
+	IgnoreSystemDNS          bool                       `toml:"ignore_system_dns,omitempty" json:"ignore_system_dns,omitempty"`
+	AllWeeklyRanges          map[string]WeeklyRangesStr `toml:"schedules,omitempty" json:"schedules,omitempty"`
+	LogMaxSize               int                        `toml:"log_files_max_size,omitempty" json:"log_files_max_size,omitempty"`
+	LogMaxAge                int                        `toml:"log_files_max_age,omitempty" json:"log_files_max_age,omitempty"`
+	LogMaxBackups            int                        `toml:"log_files_max_backups,omitempty" json:"log_files_max_backups,omitempty"`
+	TLSDisableSessionTickets bool                       `toml:"tls_disable_session_tickets,omitempty" json:"tls_disable_session_tickets,omitempty"`
+	TLSCipherSuite           []uint16                   `toml:"tls_cipher_suite,omitempty" json:"tls_cipher_suite,omitempty"`
+	NetprobeAddress          string                     `toml:"netprobe_address,omitempty" json:"netprobe_address,omitempty"`
+	NetprobeTimeout          int                        `toml:"netprobe_timeout,omitempty" json:"netprobe_timeout,omitempty"`
+	MaxWorkers               int                        `toml:"max_workers,omitempty" json:"max_workers,omitempty"`
+	RetryCount               int                        `toml:"retry_count,omitempty" json:"retry_count,omitempty"`
+	IOSMode                  bool                       `toml:"ios_mode,omitempty" json:"ios_mode,omitempty"`
+	OfflineMode              bool                       `toml:"offline_mode,omitempty" json:"offline_mode,omitempty"`
+	HTTPProxyURL             string                     `toml:"http_proxy,omitempty" json:"http_proxy,omitempty"`
+	RefusedCodeInResponses   bool                       `toml:"refused_code_in_responses,omitempty" json:"refused_code_in_responses,omitempty"`
 }
 
 func newConfig() Config {
@@ -121,46 +121,46 @@ func newConfig() Config {
 }
 
 type StaticConfig struct {
-	Stamp string
+	Stamp string `toml:"stamp,omitempty" json:"stamp,omitempty"`
 }
 
 type SourceConfig struct {
-	URL            string
-	URLs           []string
-	MinisignKeyStr string `toml:"minisign_key"`
-	CacheFile      string `toml:"cache_file"`
-	FormatStr      string `toml:"format"`
-	RefreshDelay   int    `toml:"refresh_delay"`
-	Prefix         string
+	URL            string   `toml:"url,omitempty" json:"url,omitempty"`
+	URLs           []string `toml:"urls,omitempty" json:"urls,omitempty"`
+	MinisignKeyStr string   `toml:"minisign_key,omitempty" json:"minisign_key,omitempty"`
+	CacheFile      string   `toml:"cache_file,omitempty" json:"cache_file,omitempty"`
+	FormatStr      string   `toml:"format,omitempty" json:"format,omitempty"`
+	RefreshDelay   int      `toml:"refresh_delay,omitempty" json:"refresh_delay,omitempty"`
+	Prefix         string   `toml:"prefix,omitempty" json:"prefix,omitempty"`
 }
 
 type QueryLogConfig struct {
-	File          string
-	Format        string
-	IgnoredQtypes []string `toml:"ignored_qtypes"`
+	File          string   `toml:"file,omitempty" json:"file,omitempty"`
+	Format        string   `toml:"format,omitempty" json:"format,omitempty"`
+	IgnoredQtypes []string `toml:"ignored_qtypes,omitempty" json:"ignored_qtypes,omitempty"`
 }
 
 type NxLogConfig struct {
-	File   string
-	Format string
+	File   string `toml:"file,omitempty" json:"file,omitempty"`
+	Format string `toml:"format,omitempty" json:"format,omitempty"`
 }
 
 type BlockNameConfig struct {
-	File    string `toml:"blacklist_file"`
-	LogFile string `toml:"log_file"`
-	Format  string `toml:"log_format"`
+	File    string `toml:"blacklist_file,omitempty" json:"blacklist_file,omitempty"`
+	LogFile string `toml:"log_file,omitempty" json:"log_file,omitempty"`
+	Format  string `toml:"log_format,omitempty" json:"log_format,omitempty"`
 }
 
 type WhitelistNameConfig struct {
-	File    string `toml:"whitelist_file"`
-	LogFile string `toml:"log_file"`
-	Format  string `toml:"log_format"`
+	File    string `toml:"whitelist_file,omitempty" json:"whitelist_file,omitempty"`
+	LogFile string `toml:"log_file,omitempty" json:"log_file,omitempty"`
+	Format  string `toml:"log_format,omitempty" json:"log_format,omitempty"`
 }
 
 type BlockIPConfig struct {
-	File    string `toml:"blacklist_file"`
-	LogFile string `toml:"log_file"`
-	Format  string `toml:"log_format"`
+	File    string `toml:"blacklist_file,omitempty" json:"blacklist_file,omitempty"`
+	LogFile string `toml:"log_file,omitempty" json:"log_file,omitempty"`
+	Format  string `toml:"log_format,omitempty" json:"log_format,omitempty"`
 }
 
 type ServerSummary struct {

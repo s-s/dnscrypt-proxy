@@ -148,7 +148,6 @@ func (xTransport *XTransport) SetupXTransportCloak(useIPv4 bool, useIPv6 bool, f
 	xTransport.rebuildTransport()
 }
 
-
 func PrefetchSourceURLCloak(xTransport *XTransport, url string, cacheFile string) error {
 	u := URLToPrefetch{url: url, cacheFile: cacheFile, when: time.Now()}
 	return PrefetchSourceURL(xTransport, &u)
@@ -165,4 +164,8 @@ func RefreshServersInfoCloak(proxy *Proxy) {
 		clocksmith.Sleep(delay)
 		proxy.serversInfo.refresh(proxy)
 	}
+}
+
+func DefaultConfig() Config {
+	return newConfig()
 }
