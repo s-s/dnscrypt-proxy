@@ -70,10 +70,11 @@ type Proxy struct {
 	ReadyCallback chan bool
 	readyFired    bool
 
-	iosMode    bool
-	retryCount int
-	maxWorkers int
-	workerPool *limiter.ConcurrencyLimiter
+	iosMode       bool
+	retryCount    int
+	maxWorkers    int
+	workerPool    *limiter.ConcurrencyLimiter
+	quitListeners chan bool
 }
 
 func (proxy *Proxy) StartProxy() {
@@ -99,6 +100,7 @@ func (proxy *Proxy) StartProxy() {
 
 		// if 'userName' is not set, continue as before
 		if !(len(proxy.userName) > 0) {
+			proxy.quitListeners = make(chan bool)
 			if err := proxy.udpListenerFromAddr(listenUDPAddr); err != nil {
 				dlog.Fatal(err)
 			}
@@ -220,31 +222,52 @@ func (proxy *Proxy) prefetcher(urlsToPrefetch *[]URLToPrefetch) {
 
 func (proxy *Proxy) udpListener(clientPc *net.UDPConn) {
 	defer clientPc.Close()
+
+	type received struct {
+		buffer     []byte
+		length     int
+		clientAddr net.Addr
+		err        error
+	}
+
+	c := make(chan received, 1)
+
 	for {
-		buffer := make([]byte, MaxDNSPacketSize-1)
-		length, clientAddr, err := clientPc.ReadFrom(buffer)
-		if err != nil {
+		go func() {
+			buffer := make([]byte, MaxDNSPacketSize-1)
+			length, clientAddr, err := clientPc.ReadFrom(buffer)
+			c <- received{buffer, length, clientAddr, err}
+		}()
+
+		select {
+		case <-proxy.quitListeners:
 			return
-		}
-		packet := buffer[:length]
-		proxy.workerPool.Execute(func() {
-			if !proxy.clientsCountInc() {
-				dlog.Warnf("Too many connections (max=%d)", proxy.maxClients)
-				return
+		case a := <-c:
+			if a.err != nil {
+				continue
 			}
-			defer proxy.clientsCountDec()
 
-			attempt := 0
-			for {
-				err := proxy.processIncomingQuery(proxy.serversInfo.getOne(), "udp", proxy.mainProto, packet, &clientAddr, clientPc, attempt)
-
-				if err == nil || proxy.retryCount == 0 || attempt >= proxy.retryCount {
-					break
-				} else {
-					attempt++
+			clientAddr := a.clientAddr
+			packet := a.buffer[:a.length]
+			proxy.workerPool.Execute(func() {
+				if !proxy.clientsCountInc() {
+					dlog.Warnf("Too many connections (max=%d)", proxy.maxClients)
+					return
 				}
-			}
-		})
+				defer proxy.clientsCountDec()
+
+				attempt := 0
+				for {
+					err := proxy.processIncomingQuery(proxy.serversInfo.getOne(), "udp", proxy.mainProto, packet, &clientAddr, clientPc, attempt)
+
+					if err == nil || proxy.retryCount == 0 || attempt >= proxy.retryCount {
+						break
+					} else {
+						attempt++
+					}
+				}
+			})
+		}
 	}
 }
 
@@ -260,36 +283,54 @@ func (proxy *Proxy) udpListenerFromAddr(listenAddr *net.UDPAddr) error {
 
 func (proxy *Proxy) tcpListener(acceptPc *net.TCPListener) {
 	defer acceptPc.Close()
+
+	type accepted struct {
+		clientPc net.Conn
+		err      error
+	}
+
+	c := make(chan accepted, 1)
+
 	for {
-		clientPc, err := acceptPc.Accept()
-		if err != nil {
-			continue
-		}
-		proxy.workerPool.Execute(func() {
-			defer clientPc.Close()
-			if !proxy.clientsCountInc() {
-				dlog.Warnf("Too many connections (max=%d)", proxy.maxClients)
-				return
-			}
-			defer proxy.clientsCountDec()
-			clientPc.SetDeadline(time.Now().Add(proxy.timeout))
-			packet, err := ReadPrefixed(&clientPc)
-			if err != nil || len(packet) < MinDNSPacketSize {
-				return
-			}
-			clientAddr := clientPc.RemoteAddr()
+		go func() {
+			clientPc, err := acceptPc.Accept()
+			c <- accepted{clientPc, err}
+		}()
 
-			attempt := 0
-			for {
-				err := proxy.processIncomingQuery(proxy.serversInfo.getOne(), "tcp", "tcp", packet, &clientAddr, clientPc, attempt)
-
-				if err == nil || proxy.retryCount == 0 || attempt >= proxy.retryCount {
-					break
-				} else {
-					attempt++
+		select {
+		case <-proxy.quitListeners:
+			return
+		case a := <-c:
+			if a.err != nil {
+				continue
+			}
+			clientPc := a.clientPc
+			proxy.workerPool.Execute(func() {
+				defer clientPc.Close()
+				if !proxy.clientsCountInc() {
+					dlog.Warnf("Too many connections (max=%d)", proxy.maxClients)
+					return
 				}
-			}
-		})
+				defer proxy.clientsCountDec()
+				clientPc.SetDeadline(time.Now().Add(proxy.timeout))
+				packet, err := ReadPrefixed(&clientPc)
+				if err != nil || len(packet) < MinDNSPacketSize {
+					return
+				}
+				clientAddr := clientPc.RemoteAddr()
+
+				attempt := 0
+				for {
+					err := proxy.processIncomingQuery(proxy.serversInfo.getOne(), "tcp", "tcp", packet, &clientAddr, clientPc, attempt)
+
+					if err == nil || proxy.retryCount == 0 || attempt >= proxy.retryCount {
+						break
+					} else {
+						attempt++
+					}
+				}
+			})
+		}
 	}
 }
 

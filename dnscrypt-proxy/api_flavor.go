@@ -8,6 +8,10 @@ import (
 	"github.com/miekg/dns"
 )
 
+func (proxy *Proxy) StopProxy() {
+	close(proxy.quitListeners)
+}
+
 func (proxy *Proxy) GetPluginsGlobals() *PluginsGlobals {
 	return &proxy.pluginsGlobals
 }
