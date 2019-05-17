@@ -71,11 +71,12 @@ type Proxy struct {
 	ReadyCallback chan bool
 	readyFired    bool
 
-	iosMode    bool
-	retryCount int
-	maxWorkers int
-	workerPool *limiter.ConcurrencyLimiter
-	wgQuit     sync.WaitGroup
+	iosMode       bool
+	retryCount    int
+	maxWorkers    int
+	workerPool    *limiter.ConcurrencyLimiter
+	quitListeners chan bool
+	wgQuit        sync.WaitGroup
 }
 
 func (proxy *Proxy) StartProxy() {
