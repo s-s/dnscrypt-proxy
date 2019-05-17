@@ -10,6 +10,7 @@ import (
 
 func (proxy *Proxy) StopProxy() {
 	close(proxy.quitListeners)
+	proxy.wgQuit.Wait()
 }
 
 func (proxy *Proxy) GetPluginsGlobals() *PluginsGlobals {

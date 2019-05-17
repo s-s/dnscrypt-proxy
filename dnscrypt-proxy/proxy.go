@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -70,11 +71,11 @@ type Proxy struct {
 	ReadyCallback chan bool
 	readyFired    bool
 
-	iosMode       bool
-	retryCount    int
-	maxWorkers    int
-	workerPool    *limiter.ConcurrencyLimiter
-	quitListeners chan bool
+	iosMode    bool
+	retryCount int
+	maxWorkers int
+	workerPool *limiter.ConcurrencyLimiter
+	wgQuit     sync.WaitGroup
 }
 
 func (proxy *Proxy) StartProxy() {
@@ -107,6 +108,7 @@ func (proxy *Proxy) StartProxy() {
 			if err := proxy.tcpListenerFromAddr(listenTCPAddr); err != nil {
 				dlog.Fatal(err)
 			}
+			proxy.wgQuit.Add(2)
 		} else {
 			// if 'userName' is set and we are the parent process
 			if !proxy.child {
@@ -221,6 +223,7 @@ func (proxy *Proxy) prefetcher(urlsToPrefetch *[]URLToPrefetch) {
 }
 
 func (proxy *Proxy) udpListener(clientPc *net.UDPConn) {
+	defer proxy.wgQuit.Done()
 	defer clientPc.Close()
 
 	type received struct {
@@ -282,6 +285,7 @@ func (proxy *Proxy) udpListenerFromAddr(listenAddr *net.UDPAddr) error {
 }
 
 func (proxy *Proxy) tcpListener(acceptPc *net.TCPListener) {
+	defer proxy.wgQuit.Done()
 	defer acceptPc.Close()
 
 	type accepted struct {
