@@ -102,7 +102,7 @@ func (serversInfo *ServersInfo) refreshServer(proxy *Proxy, name string, stamp s
 	}
 	newServer.rtt = ewma.NewMovingAverage(RTTEwmaDecay)
 	serversInfo.Lock()
-	defer serversInfo.Unlock()
+	//defer serversInfo.Unlock()
 	previousIndex = -1
 	for i, oldServer := range serversInfo.inner {
 		if oldServer.Name == name {
@@ -112,10 +112,16 @@ func (serversInfo *ServersInfo) refreshServer(proxy *Proxy, name string, stamp s
 	}
 	if previousIndex >= 0 {
 		serversInfo.inner[previousIndex] = &newServer
+		serversInfo.Unlock()
 		return nil
 	}
 	serversInfo.inner = append(serversInfo.inner, &newServer)
-	serversInfo.registeredServers = append(serversInfo.registeredServers, RegisteredServer{name: name, stamp: stamp})
+	//serversInfo.registeredServers = append(serversInfo.registeredServers, RegisteredServer{name: name, stamp: stamp})
+	serversInfo.Unlock()
+	err = serversInfo.registerServer(proxy, name, stamp)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -134,10 +140,12 @@ func (serversInfo *ServersInfo) refresh(proxy *Proxy) (int, error) {
 	serversInfo.Lock()
 	inner := serversInfo.inner
 	innerLen := len(inner)
-	for i := 0; i < innerLen; i++ {
-		for j := i + 1; j < innerLen; j++ {
-			if inner[j].initialRtt < inner[i].initialRtt {
-				inner[j], inner[i] = inner[i], inner[j]
+	if innerLen > 1 {
+		for i := 0; i < innerLen; i++ {
+			for j := i + 1; j < innerLen; j++ {
+				if inner[j].initialRtt < inner[i].initialRtt {
+					inner[j], inner[i] = inner[i], inner[j]
+				}
 			}
 		}
 	}
