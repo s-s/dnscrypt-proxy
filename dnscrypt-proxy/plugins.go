@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/jedisct1/dlog"
 	"github.com/miekg/dns"
@@ -70,7 +71,11 @@ type PluginsState struct {
 	cacheMinTTL            uint32
 	cacheMaxTTL            uint32
 	questionMsg            *dns.Msg
+	requestStart           time.Time
+	requestEnd             time.Time
+	cacheHit               bool
 	returnCode             PluginsReturnCode
+	serverName             string
 }
 
 func InitPluginsGlobals(pluginsGlobals *PluginsGlobals, proxy *Proxy) error {
@@ -143,7 +148,7 @@ type Plugin interface {
 	Eval(pluginsState *PluginsState, msg *dns.Msg) error
 }
 
-func NewPluginsState(proxy *Proxy, clientProto string, clientAddr *net.Addr) PluginsState {
+func NewPluginsState(proxy *Proxy, clientProto string, clientAddr *net.Addr, start time.Time) PluginsState {
 	return PluginsState{
 		action:         PluginsActionForward,
 		maxPayloadSize: MaxDNSUDPPacketSize - ResponseOverhead,
@@ -155,13 +160,15 @@ func NewPluginsState(proxy *Proxy, clientProto string, clientAddr *net.Addr) Plu
 		cacheMinTTL:    proxy.cacheMinTTL,
 		cacheMaxTTL:    proxy.cacheMaxTTL,
 		questionMsg:    nil,
+		requestStart:   start,
 	}
 }
 
-func (pluginsState *PluginsState) ApplyQueryPlugins(pluginsGlobals *PluginsGlobals, packet []byte) ([]byte, error) {
+func (pluginsState *PluginsState) ApplyQueryPlugins(pluginsGlobals *PluginsGlobals, packet []byte, serverName string) ([]byte, error) {
 	if len(*pluginsGlobals.queryPlugins) == 0 && len(*pluginsGlobals.loggingPlugins) == 0 {
 		return packet, nil
 	}
+	pluginsState.serverName = serverName
 	pluginsState.action = PluginsActionForward
 	msg := dns.Msg{}
 	if err := msg.Unpack(packet); err != nil {
@@ -253,6 +260,7 @@ func (pluginsState *PluginsState) ApplyLoggingPlugins(pluginsGlobals *PluginsGlo
 	if len(*pluginsGlobals.loggingPlugins) == 0 {
 		return nil
 	}
+	pluginsState.requestEnd = time.Now()
 	questionMsg := pluginsState.questionMsg
 	if questionMsg == nil || len(questionMsg.Question) > 1 {
 		return errors.New("Unexpected number of questions")

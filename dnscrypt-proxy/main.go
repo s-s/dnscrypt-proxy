@@ -1,8 +1,11 @@
 package main
 
 import (
+	crypto_rand "crypto/rand"
+	"encoding/binary"
 	"flag"
 	"fmt"
+	"math/rand"
 	"os"
 	"sync"
 
@@ -12,7 +15,7 @@ import (
 )
 
 const (
-	AppVersion            = "2.0.21"
+	AppVersion            = "2.0.25"
 	DefaultConfigFileName = "dnscrypt-proxy.toml"
 )
 
@@ -25,6 +28,10 @@ type App struct {
 func main() {
 	dlog.Init("dnscrypt-proxy", dlog.SeverityNotice, "DAEMON")
 	os.Setenv("GODEBUG", os.Getenv("GODEBUG")+",tls13=1")
+
+	seed := make([]byte, 8)
+	crypto_rand.Read(seed)
+	rand.Seed(int64(binary.LittleEndian.Uint64(seed[:])))
 
 	pwd, err := os.Getwd()
 	if err != nil {

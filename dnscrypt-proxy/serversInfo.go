@@ -56,7 +56,7 @@ const (
 	LBStrategyNone = LBStrategy(iota)
 	LBStrategyP2
 	LBStrategyPH
-	LBStrategyFastest
+	LBStrategyFirst
 	LBStrategyRandom
 )
 
@@ -67,6 +67,11 @@ type ServersInfo struct {
 	inner             []*ServerInfo
 	registeredServers []RegisteredServer
 	lbStrategy        LBStrategy
+	lbEstimator       bool
+}
+
+func NewServersInfo() ServersInfo {
+	return ServersInfo{lbStrategy: DefaultLBStrategy, lbEstimator: true, registeredServers: make([]RegisteredServer, 0)}
 }
 
 func (serversInfo *ServersInfo) registerServer(proxy *Proxy, name string, stamp stamps.ServerStamp) error {
@@ -101,6 +106,7 @@ func (serversInfo *ServersInfo) refreshServer(proxy *Proxy, name string, stamp s
 		dlog.Fatalf("[%s] != [%s]", name, newServer.Name)
 	}
 	newServer.rtt = ewma.NewMovingAverage(RTTEwmaDecay)
+	newServer.rtt.Set(float64(newServer.initialRtt))
 	serversInfo.Lock()
 	//defer serversInfo.Unlock()
 	previousIndex = -1
@@ -150,6 +156,13 @@ func (serversInfo *ServersInfo) refresh(proxy *Proxy) (int, error) {
 		}
 	}
 	serversInfo.inner = inner
+
+	if innerLen > 1 {
+		dlog.Notice("Sorted latencies:")
+		for i := 0; i < innerLen; i++ {
+			dlog.Noticef("- %5dms %s", inner[i].initialRtt, inner[i].Name)
+		}
+	}
 	if innerLen > 0 {
 		dlog.Noticef("Server with the lowest initial latency: %s (rtt: %dms)", inner[0].Name, inner[0].initialRtt)
 		proxy.certIgnoreTimestamp = false
@@ -165,17 +178,7 @@ func (serversInfo *ServersInfo) liveServers() int {
 	return liveServers
 }
 
-func (serversInfo *ServersInfo) getOne() *ServerInfo {
-	serversInfo.Lock()
-	defer serversInfo.Unlock()
-	serversCount := len(serversInfo.inner)
-	if serversCount <= 0 {
-		return nil
-	}
-	candidate := rand.Intn(serversCount)
-	if candidate == 0 {
-		return serversInfo.inner[candidate]
-	}
+func (serversInfo *ServersInfo) estimatorUpdate(candidate int) {
 	candidateRtt, currentBestRtt := serversInfo.inner[candidate].rtt.Value(), serversInfo.inner[0].rtt.Value()
 	if currentBestRtt < 0 {
 		currentBestRtt = candidateRtt
@@ -185,22 +188,41 @@ func (serversInfo *ServersInfo) getOne() *ServerInfo {
 	if candidateRtt < currentBestRtt {
 		serversInfo.inner[candidate], serversInfo.inner[0] = serversInfo.inner[0], serversInfo.inner[candidate]
 		partialSort = true
-		dlog.Debugf("New preferred candidate: %v (rtt: %v vs previous: %v)", serversInfo.inner[0].Name, candidateRtt, currentBestRtt)
-	} else if candidateRtt >= currentBestRtt*4.0 {
+		dlog.Debugf("New preferred candidate: %v (rtt: %d vs previous: %d)", serversInfo.inner[0].Name, int(candidateRtt), int(currentBestRtt))
+	} else if candidateRtt > 0 && candidateRtt >= currentBestRtt*4.0 {
 		if time.Since(serversInfo.inner[candidate].lastActionTS) > time.Duration(1*time.Minute) {
 			serversInfo.inner[candidate].rtt.Add(MinF(MaxF(candidateRtt/2.0, currentBestRtt*2.0), candidateRtt))
+			dlog.Debugf("Giving a new chance to candidate [%s], lowering its RTT from %d to %d (best: %d)", serversInfo.inner[candidate].Name, int(candidateRtt), int(serversInfo.inner[candidate].rtt.Value()), int(currentBestRtt))
 			partialSort = true
 		}
 	}
 	if partialSort {
+		serversCount := len(serversInfo.inner)
 		for i := 1; i < serversCount; i++ {
 			if serversInfo.inner[i-1].rtt.Value() > serversInfo.inner[i].rtt.Value() {
 				serversInfo.inner[i-1], serversInfo.inner[i] = serversInfo.inner[i], serversInfo.inner[i-1]
 			}
 		}
 	}
+}
+
+func (serversInfo *ServersInfo) getOne() *ServerInfo {
+	serversInfo.Lock()
+	defer serversInfo.Unlock()
+	serversCount := len(serversInfo.inner)
+	if serversCount <= 0 {
+		return nil
+	}
+	if serversInfo.lbEstimator {
+		candidate := rand.Intn(serversCount)
+		if candidate == 0 {
+			return serversInfo.inner[candidate]
+		}
+		serversInfo.estimatorUpdate(candidate)
+	}
+	var candidate int
 	switch serversInfo.lbStrategy {
-	case LBStrategyFastest:
+	case LBStrategyFirst:
 		candidate = 0
 	case LBStrategyPH:
 		candidate = rand.Intn(Min(Min(serversCount, 2), serversCount/2))
@@ -210,7 +232,7 @@ func (serversInfo *ServersInfo) getOne() *ServerInfo {
 		candidate = rand.Intn(Min(serversCount, 2))
 	}
 	serverInfo := serversInfo.inner[candidate]
-	dlog.Debugf("Using candidate %v: [%v]", candidate, (*serverInfo).Name)
+	dlog.Debugf("Using candidate [%s] RTT: %d", (*serverInfo).Name, int((*serverInfo).rtt.Value()))
 
 	return serverInfo
 }
@@ -299,7 +321,12 @@ func (serversInfo *ServersInfo) fetchDoHServerInfo(proxy *Proxy, name string, st
 		dlog.Debugf("[%s] fetch DoH server info - TLS handshake fail", name)
 		return ServerInfo{}, errors.New("TLS handshake failed")
 	}
-	dlog.Infof("[%s] TLS version: %x - Protocol: %v - Cipher suite: %v", name, tls.Version, tls.NegotiatedProtocol, tls.CipherSuite)
+	protocol := tls.NegotiatedProtocol
+	if len(protocol) == 0 {
+		protocol = "h1"
+		dlog.Warnf("[%s] does not support HTTP/2", name)
+	}
+	dlog.Infof("[%s] TLS version: %x - Protocol: %v - Cipher suite: %v", name, tls.Version, protocol, tls.CipherSuite)
 	showCerts := len(os.Getenv("SHOW_CERTS")) > 0
 	found := false
 	var wantedHash [32]byte
@@ -334,10 +361,11 @@ func (serversInfo *ServersInfo) fetchDoHServerInfo(proxy *Proxy, name string, st
 		respBody[0] != 0xca || respBody[1] != 0xfe || respBody[4] != 0x00 || respBody[5] != 0x01 {
 		return ServerInfo{}, errors.New("Webserver returned an unexpected response")
 	}
+	xrtt := int(rtt.Nanoseconds() / 1000000)
 	if isNew {
-		dlog.Noticef("[%s] OK (DoH) - rtt: %dms", name, rtt.Nanoseconds()/1000000)
+		dlog.Noticef("[%s] OK (DoH) - rtt: %dms", name, xrtt)
 	} else {
-		dlog.Infof("[%s] OK (DoH) - rtt: %dms", name, rtt.Nanoseconds()/1000000)
+		dlog.Infof("[%s] OK (DoH) - rtt: %dms", name, xrtt)
 	}
 	return ServerInfo{
 		Proto:      stamps.StampProtoTypeDoH,
@@ -345,7 +373,7 @@ func (serversInfo *ServersInfo) fetchDoHServerInfo(proxy *Proxy, name string, st
 		Timeout:    proxy.timeout,
 		URL:        url,
 		HostName:   stamp.ProviderName,
-		initialRtt: int(rtt.Nanoseconds() / 1000000),
+		initialRtt: xrtt,
 		useGet:     useGet,
 	}, nil
 }

@@ -71,16 +71,26 @@ func (plugin *PluginQueryLog) Eval(pluginsState *PluginsState, msg *dns.Msg) err
 		returnCode = string(returnCode)
 	}
 
+	var requestDuration time.Duration
+	if !pluginsState.requestStart.IsZero() && !pluginsState.requestEnd.IsZero() {
+		requestDuration = pluginsState.requestEnd.Sub(pluginsState.requestStart)
+	}
+
 	var line string
 	if plugin.format == "tsv" {
 		now := time.Now()
 		year, month, day := now.Date()
 		hour, minute, second := now.Clock()
 		tsStr := fmt.Sprintf("[%d-%02d-%02d %02d:%02d:%02d]", year, int(month), day, hour, minute, second)
-		line = fmt.Sprintf("%s\t%s\t%s\t%s\t%s\n", tsStr, clientIPStr, StringQuote(qName), qType, returnCode)
+		line = fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%dms\t%s\n", tsStr, clientIPStr, StringQuote(qName), qType, returnCode, requestDuration/time.Millisecond,
+			StringQuote(pluginsState.serverName))
 	} else if plugin.format == "ltsv" {
-		line = fmt.Sprintf("time:%d\thost:%s\tmessage:%s\ttype:%s\treturn:%s\n",
-			time.Now().Unix(), clientIPStr, StringQuote(qName), qType, returnCode)
+		cached := 0
+		if pluginsState.cacheHit {
+			cached = 1
+		}
+		line = fmt.Sprintf("time:%d\thost:%s\tmessage:%s\ttype:%s\treturn:%s\tcached:%d\tduration:%d\tserver:%s\n",
+			time.Now().Unix(), clientIPStr, StringQuote(qName), qType, returnCode, cached, requestDuration/time.Millisecond, StringQuote(pluginsState.serverName))
 	} else {
 		dlog.Fatalf("Unexpected log format: [%s]", plugin.format)
 	}

@@ -1,9 +1,9 @@
 package main
 
 import (
+	crypto_rand "crypto/rand"
 	"io"
 	"io/ioutil"
-	"math/rand"
 	"net"
 	"os"
 	"sync"
@@ -82,7 +82,7 @@ type Proxy struct {
 func (proxy *Proxy) StartProxy() {
 	proxy.workerPool = limiter.NewConcurrencyLimiter(proxy.maxWorkers)
 	proxy.questionSizeEstimator = NewQuestionSizeEstimator()
-	if _, err := rand.Read(proxy.proxySecretKey[:]); err != nil {
+	if _, err := crypto_rand.Read(proxy.proxySecretKey[:]); err != nil {
 		dlog.Fatal(err)
 	}
 	curve25519.ScalarBaseMult(&proxy.proxyPublicKey, &proxy.proxySecretKey)
@@ -254,6 +254,7 @@ func (proxy *Proxy) udpListener(clientPc *net.UDPConn) {
 			clientAddr := a.clientAddr
 			packet := a.buffer[:a.length]
 			proxy.workerPool.Execute(func() {
+                start := time.Now()
 				if !proxy.clientsCountInc() {
 					dlog.Warnf("Too many connections (max=%d)", proxy.maxClients)
 					return
@@ -262,7 +263,7 @@ func (proxy *Proxy) udpListener(clientPc *net.UDPConn) {
 
 				attempt := 0
 				for {
-					err := proxy.processIncomingQuery(proxy.serversInfo.getOne(), "udp", proxy.mainProto, packet, &clientAddr, clientPc, attempt)
+					err := proxy.processIncomingQuery(proxy.serversInfo.getOne(), "udp", proxy.mainProto, packet, &clientAddr, clientPc, start, attempt)
 
 					if err == nil || proxy.retryCount == 0 || attempt >= proxy.retryCount {
 						break
@@ -311,6 +312,7 @@ func (proxy *Proxy) tcpListener(acceptPc *net.TCPListener) {
 			}
 			clientPc := a.clientPc
 			proxy.workerPool.Execute(func() {
+                start := time.Now()
 				defer clientPc.Close()
 				if !proxy.clientsCountInc() {
 					dlog.Warnf("Too many connections (max=%d)", proxy.maxClients)
@@ -326,7 +328,7 @@ func (proxy *Proxy) tcpListener(acceptPc *net.TCPListener) {
 
 				attempt := 0
 				for {
-					err := proxy.processIncomingQuery(proxy.serversInfo.getOne(), "tcp", "tcp", packet, &clientAddr, clientPc, attempt)
+					err := proxy.processIncomingQuery(proxy.serversInfo.getOne(), "tcp", "tcp", packet, &clientAddr, clientPc, start, attempt)
 
 					if err == nil || proxy.retryCount == 0 || attempt >= proxy.retryCount {
 						break
@@ -413,11 +415,11 @@ func (proxy *Proxy) clientsCountDec() {
 	}
 }
 
-func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto string, serverProto string, query []byte, clientAddr *net.Addr, clientPc net.Conn, attempt int) error {
+func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto string, serverProto string, query []byte, clientAddr *net.Addr, clientPc net.Conn, start time.Time, attempt int) error {
 	if len(query) < MinDNSPacketSize {
 		return nil
 	}
-	pluginsState := NewPluginsState(proxy, clientProto, clientAddr)
+	pluginsState := NewPluginsState(proxy, clientProto, clientAddr, start)
 
 	var response []byte
 	var err error
@@ -432,7 +434,14 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 		}
 	}
 
-	query, _ = pluginsState.ApplyQueryPlugins(&proxy.pluginsGlobals, query)
+    serverName := "-"
+    if serverInfo != nil {
+        serverName = serverInfo.Name
+    }
+    query, _ = pluginsState.ApplyQueryPlugins(&proxy.pluginsGlobals, query, serverName)
+    if len(query) < MinDNSPacketSize || len(query) > MaxDNSPacketSize {
+        return nil
+    }
 
 	if pluginsState.action != PluginsActionForward {
 		if pluginsState.synthResponse != nil {
@@ -559,7 +568,7 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 
 func NewProxy() Proxy {
 	return Proxy{
-		serversInfo:   ServersInfo{lbStrategy: DefaultLBStrategy},
+		serversInfo:   NewServersInfo(),
 		readyFired:    false,
 		ReadyCallback: make(chan bool),
 	}
