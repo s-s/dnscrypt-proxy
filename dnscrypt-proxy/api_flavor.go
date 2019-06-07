@@ -13,6 +13,12 @@ func (proxy *Proxy) StopProxy() {
 	proxy.wgQuit.Wait()
 }
 
+func (proxy *Proxy) CloseIdleConnections() {
+	if proxy.xTransport.transport != nil {
+		(*proxy.xTransport.transport).CloseIdleConnections()
+	}
+}
+
 func (proxy *Proxy) GetPluginsGlobals() *PluginsGlobals {
 	return &proxy.pluginsGlobals
 }
