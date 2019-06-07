@@ -164,17 +164,23 @@ func PrefetchSourceURLCloak(xTransport *XTransport, url string, cacheFile string
 	return PrefetchSourceURL(xTransport, &u)
 }
 
-func RefreshServersInfoCloak(proxy *Proxy) {
+func (proxy *Proxy) RefreshServersInfo() int {
 	liveServers, _ := proxy.serversInfo.refresh(proxy)
 	if liveServers > 0 {
-		return
+		return liveServers
 	}
 
-	for proxy.serversInfo.liveServers() == 0 {
+	for liveServers == 0 {
 		delay := proxy.certRefreshDelayAfterFailure
 		clocksmith.Sleep(delay)
-		proxy.serversInfo.refresh(proxy)
+		liveServers, _ = proxy.serversInfo.refresh(proxy)
 	}
+
+	return liveServers
+}
+
+func RefreshServersInfoCloak(proxy *Proxy) {
+	proxy.RefreshServersInfo()
 }
 
 func DefaultConfig() Config {
