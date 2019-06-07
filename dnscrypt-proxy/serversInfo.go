@@ -99,6 +99,11 @@ func (serversInfo *ServersInfo) refreshServer(proxy *Proxy, name string, stamp s
 	serversInfo.RUnlock()
 	newServer, err := serversInfo.fetchServerInfo(proxy, name, stamp, previousIndex < 0)
 	if err != nil {
+		if previousIndex >= 0 {
+			serversInfo.Lock()
+			serversInfo.inner = append(serversInfo.inner[:previousIndex], serversInfo.inner[previousIndex+1:]...)
+			serversInfo.Unlock()
+		}
 		return err
 	}
 	if name != newServer.Name {
