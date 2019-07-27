@@ -83,7 +83,8 @@ type Config struct {
 	IOSMode                  bool                       `toml:"ios_mode,omitempty" json:"ios_mode,omitempty"`
 	OfflineMode              bool                       `toml:"offline_mode,omitempty" json:"offline_mode,omitempty"`
 	HTTPProxyURL             string                     `toml:"http_proxy,omitempty" json:"http_proxy,omitempty"`
-	RefusedCodeInResponses   bool                       `toml:"refused_code_in_responses,omitempty" json:"refused_code_in_responses,omitempty"`
+    RefusedCodeInResponses   bool                       `toml:"refused_code_in_responses,omitempty" json:"refused_code_in_responses,omitempty"`
+    BlockedQueryResponse     string                     `toml:"blocked_query_response,omitempty" json:"blocked_query_response,omitempty"`
 }
 
 func newConfig() Config {
@@ -120,6 +121,7 @@ func newConfig() Config {
 		OfflineMode:              false,
 		RefusedCodeInResponses:   false,
 		LBEstimator:              true,
+		BlockedQueryResponse:     "hinfo",
 		MaxWorkers:               25,
 		RetryCount:               5,
 		IOSMode:                  true,
@@ -266,6 +268,7 @@ func ConfigLoad(proxy *Proxy, svcFlag *string, configFilePath string) error {
 	proxy.xTransport.tlsDisableSessionTickets = config.TLSDisableSessionTickets
 	proxy.xTransport.tlsCipherSuite = config.TLSCipherSuite
 	proxy.xTransport.fallbackResolver = config.FallbackResolver
+	proxy.xTransport.mainProto = proxy.mainProto
 	if len(config.FallbackResolver) > 0 {
 		proxy.xTransport.ignoreSystemDNS = config.IgnoreSystemDNS
 	}
@@ -295,7 +298,15 @@ func ConfigLoad(proxy *Proxy, svcFlag *string, configFilePath string) error {
 
 	proxy.xTransport.rebuildTransport()
 
-	proxy.refusedCodeInResponses = config.RefusedCodeInResponses
+	if md.IsDefined("refused_code_in_responses") {
+		dlog.Notice("config option `refused_code_in_responses` is deprecated, use `blocked_query_response`")
+		if config.RefusedCodeInResponses {
+			config.BlockedQueryResponse = "refused"
+		} else {
+			config.BlockedQueryResponse = "hinfo"
+		}
+	}
+	proxy.blockedQueryResponse = config.BlockedQueryResponse
 	proxy.timeout = time.Duration(config.Timeout) * time.Millisecond
 	proxy.maxClients = config.MaxClients
 
@@ -545,7 +556,7 @@ func (config *Config) loadSources(proxy *Proxy) error {
 		}
 		stamp, err := stamps.NewServerStampFromString(staticConfig.Stamp)
 		if err != nil {
-			return err
+			dlog.Fatalf("Stamp error for the static [%s] definition: [%v]", serverName, err)
 		}
 		proxy.registeredServers = append(proxy.registeredServers, RegisteredServer{name: serverName, stamp: stamp})
 	}
