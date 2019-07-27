@@ -142,13 +142,13 @@ func (pluginsState *PluginsState) SetReturnCode(code PluginsReturnCode) {
 	pluginsState.returnCode = code
 }
 
-func RefusedResponseFromQuery(packet []byte, refusedCode bool) (*dns.Msg, error) {
+func (proxy *Proxy) RefusedResponseFromQuery(packet []byte) (*dns.Msg, error) {
 	msg := dns.Msg{}
 	if err := msg.Unpack(packet); err != nil {
 		return nil, err
 	}
 
-	return RefusedResponseFromMessage(&msg, refusedCode)
+	return RefusedResponseFromMessage(&msg, proxy.pluginsGlobals.refusedCodeInResponses, proxy.pluginsGlobals.respondWithIPv4, proxy.pluginsGlobals.respondWithIPv6, proxy.cacheMinTTL)
 }
 
 func (xTransport *XTransport) SetupXTransportCloak(useIPv4 bool, useIPv6 bool, fallbackResolver string, ignoreSystemDNS bool) {

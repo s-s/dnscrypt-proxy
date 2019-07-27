@@ -433,7 +433,7 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 	var response []byte
 	var err error
 	if proxy.retryCount > 0 && attempt >= proxy.retryCount { //TODO: plugin?
-		refMsg, err := RefusedResponseFromQuery(query, proxy.refusedCodeInResponses)
+		refMsg, err := proxy.RefusedResponseFromQuery(query)
 		if err != nil {
 			return nil //TODO: wtf? O_o should't happen
 		}
