@@ -85,6 +85,8 @@ type Config struct {
 	HTTPProxyURL             string                     `toml:"http_proxy,omitempty" json:"http_proxy,omitempty"`
     RefusedCodeInResponses   bool                       `toml:"refused_code_in_responses,omitempty" json:"refused_code_in_responses,omitempty"`
     BlockedQueryResponse     string                     `toml:"blocked_query_response,omitempty" json:"blocked_query_response,omitempty"`
+    QueryMeta                []string                   `toml:"query_meta,omitempty" json:"query_meta,omitempty"`
+    AnonymizedDNS            AnonymizedDNSConfig        `toml:"anonymized_dns,omitempty" json:"anonymized_dns,omitempty"`
 }
 
 func newConfig() Config {
@@ -169,6 +171,15 @@ type BlockIPConfig struct {
 	File    string `toml:"blacklist_file,omitempty" json:"blacklist_file,omitempty"`
 	LogFile string `toml:"log_file,omitempty" json:"log_file,omitempty"`
 	Format  string `toml:"log_format,omitempty" json:"log_format,omitempty"`
+}
+
+type AnonymizedDNSRouteConfig struct {
+	ServerName string   `toml:"server_name"`
+	RelayNames []string `toml:"via"`
+}
+
+type AnonymizedDNSConfig struct {
+	Routes []AnonymizedDNSRouteConfig `toml:"routes"`
 }
 
 type ServerSummary struct {
@@ -363,6 +374,8 @@ func ConfigLoad(proxy *Proxy, svcFlag *string, configFilePath string) error {
 	proxy.cacheMinTTL = config.CacheMinTTL
 	proxy.cacheMaxTTL = config.CacheMaxTTL
 
+	proxy.queryMeta = config.QueryMeta
+
 	if len(config.QueryLog.Format) == 0 {
 		config.QueryLog.Format = "tsv"
 	} else {
@@ -431,6 +444,14 @@ func ConfigLoad(proxy *Proxy, svcFlag *string, configFilePath string) error {
 	}
 	proxy.allWeeklyRanges = allWeeklyRanges
 
+	if configRoutes := config.AnonymizedDNS.Routes; configRoutes != nil {
+		routes := make(map[string][]string)
+		for _, configRoute := range configRoutes {
+			routes[configRoute.ServerName] = configRoute.RelayNames
+		}
+		proxy.routes = &routes
+	}
+
 	if *listAll {
 		config.ServerNames = nil
 		config.DisabledServerNames = nil
@@ -463,6 +484,7 @@ func ConfigLoad(proxy *Proxy, svcFlag *string, configFilePath string) error {
 	if proxy.showCerts {
 		proxy.listenAddresses = nil
 	}
+	dlog.Noticef("dnscrypt-proxy %s", AppVersion)
 	NetProbe(netprobeAddress, netprobeTimeout)
 
 	if !config.OfflineMode {
@@ -476,6 +498,13 @@ func ConfigLoad(proxy *Proxy, svcFlag *string, configFilePath string) error {
 	if *list || *listAll {
 		config.printRegisteredServers(proxy, *jsonOutput)
 		os.Exit(0)
+	}
+	if proxy.routes != nil && len(*proxy.routes) > 0 {
+		for _, server := range proxy.registeredServers {
+			if via, ok := (*proxy.routes)[server.name]; ok {
+				dlog.Noticef("Anonymized DNS: routing [%v] via %v", server.name, via)
+			}
+		}
 	}
 	if *check {
 		dlog.Notice("Configuration successfully checked")
@@ -595,8 +624,11 @@ func (config *Config) loadSource(proxy *Proxy, requiredProps stamps.ServerInform
 	}
 	registeredServers, err := source.Parse(cfgSource.Prefix)
 	if err != nil {
-		dlog.Criticalf("Unable to use source [%s]: [%s]", cfgSourceName, err)
-		return err
+		if len(registeredServers) == 0 {
+			dlog.Criticalf("Unable to use source [%s]: [%s]", cfgSourceName, err)
+			return err
+		}
+		dlog.Warnf("Error in source [%s]: [%s] -- Continuing with reduced server count [%d]", cfgSourceName, err, len(registeredServers))
 	}
 	for _, registeredServer := range registeredServers {
 		if len(config.ServerNames) > 0 {

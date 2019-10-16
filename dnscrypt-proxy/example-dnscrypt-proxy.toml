@@ -31,7 +31,6 @@
 
 
 ## List of local addresses and ports to listen to. Can be IPv4 and/or IPv6.
-## Note: When using systemd socket activation, choose an empty set (i.e. [] ).
 
 listen_addresses = ['127.0.0.1:53', '[::1]:53']
 
@@ -92,13 +91,13 @@ force_tcp = false
 ## Uncomment the following line to route all TCP connections to a local Tor node
 ## Tor doesn't support UDP, so set `force_tcp` to `true` as well.
 
-# proxy = "socks5://127.0.0.1:9050"
+# proxy = 'socks5://127.0.0.1:9050'
 
 
 ## HTTP/HTTPS proxy
 ## Only for DoH servers
 
-# http_proxy = "http://127.0.0.1:8888"
+# http_proxy = 'http://127.0.0.1:8888'
 
 
 ## How long a DNS query will wait for a response, in milliseconds
@@ -220,7 +219,7 @@ netprobe_timeout = 60
 ## On other operating systems, the connection will be initialized
 ## but nothing will be sent at all.
 
-netprobe_address = "9.9.9.9:53"
+netprobe_address = '9.9.9.9:53'
 
 
 ## Offline mode - Do not use any remote encrypted servers.
@@ -230,9 +229,17 @@ netprobe_address = "9.9.9.9:53"
 # offline_mode = false
 
 
+## Additional data to attach to outgoing queries.
+## These strings will be added as TXT records to queries.
+## Do not use, except on servers explicitly asking for extra data
+## to be present.
+
+# query_meta = ["key1:value1", "key2:value2", "key3:value3"]
+
+
 ## Automatic log files rotation
 
-# Maximum log files size in MB
+# Maximum log files size in MB - Set to 0 for unlimited.
 log_files_max_size = 10
 
 # How long to keep backup files, in days
@@ -329,6 +336,7 @@ cache_neg_max_ttl = 600
 [query_log]
 
   ## Path to the query log file (absolute, or relative to the same directory as the executable file)
+  ## Can be /dev/stdout to log to the standard output (and set log_files_max_size to 0)
 
   # file = 'query.log'
 
@@ -524,10 +532,10 @@ cache_neg_max_ttl = 600
   ## Quad9 over DNSCrypt - https://quad9.net/
 
   # [sources.quad9-resolvers]
-  # urls = ["https://www.quad9.net/quad9-resolvers.md"]
-  # minisign_key = "RWQBphd2+f6eiAqBsvDZEBXBGHQBJfeG6G+wJPPKxCZMoEQYpmoysKUN"
-  # cache_file = "quad9-resolvers.md"
-  # prefix = "quad9-"
+  # urls = ['https://www.quad9.net/quad9-resolvers.md']
+  # minisign_key = 'RWQBphd2+f6eiAqBsvDZEBXBGHQBJfeG6G+wJPPKxCZMoEQYpmoysKUN'
+  # cache_file = 'quad9-resolvers.md'
+  # prefix = 'quad9-'
 
   ## Another example source, with resolvers censoring some websites not appropriate for children
   ## This is a subset of the `public-resolvers` list, so enabling both is useless
@@ -537,6 +545,23 @@ cache_neg_max_ttl = 600
   #  cache_file = 'parental-control.md'
   #  minisign_key = 'RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3'
 
+
+################################
+#        Anonymized DNS        #
+################################
+
+[anonymized_dns]
+
+## Define one or more routes, i.e. indirect ways to reach servers.
+## A set of possible relay servers is assigned to each DNS resolver.
+## A relay can be specified as a DNS Stamp (either a relay stamp, or a
+## DNSCrypt stamp), an IP:port, a hostname:port, or a server name, if
+## the server is in the servers_list.
+
+# routes = [
+#    { server_name='comodo-02', via=['sdns://gRIxMzcuNzQuMjIzLjIzNDo0NDM'] },
+#    { server_name='quad9-dnscrypt-ip4-nofilter-pri', via=['sdns://gRIxMzcuNzQuMjIzLjIzNDo0NDM'] }
+# ]
 
 
 ## Optional, local, static list of additional servers

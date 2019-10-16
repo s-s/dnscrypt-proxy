@@ -60,32 +60,40 @@ var PluginsReturnCodeToString = map[PluginsReturnCode]string{
 }
 
 type PluginsState struct {
-	sessionData            map[string]interface{}
-	action                 PluginsAction
-	originalMaxPayloadSize int
-	maxPayloadSize         int
-	clientProto            string
-	clientAddr             *net.Addr
-	synthResponse          *dns.Msg
-	dnssec                 bool
-	cacheSize              int
-	cacheNegMinTTL         uint32
-	cacheNegMaxTTL         uint32
-	cacheMinTTL            uint32
-	cacheMaxTTL            uint32
-	questionMsg            *dns.Msg
-	requestStart           time.Time
-	requestEnd             time.Time
-	cacheHit               bool
-	returnCode             PluginsReturnCode
-	serverName             string
+	sessionData                      map[string]interface{}
+	action                           PluginsAction
+	maxUnencryptedUDPSafePayloadSize int
+	originalMaxPayloadSize           int
+	maxPayloadSize                   int
+	clientProto                      string
+	clientAddr                       *net.Addr
+	synthResponse                    *dns.Msg
+	dnssec                           bool
+	cacheSize                        int
+	cacheNegMinTTL                   uint32
+	cacheNegMaxTTL                   uint32
+	cacheMinTTL                      uint32
+	cacheMaxTTL                      uint32
+	questionMsg                      *dns.Msg
+	requestStart                     time.Time
+	requestEnd                       time.Time
+	cacheHit                         bool
+	returnCode                       PluginsReturnCode
+	serverName                       string
 }
 
 func InitPluginsGlobals(pluginsGlobals *PluginsGlobals, proxy *Proxy) error {
 	queryPlugins := &[]Plugin{}
+
+	if len(proxy.queryMeta) != 0 {
+		*queryPlugins = append(*queryPlugins, Plugin(new(PluginQueryMeta)))
+	}
 	if len(proxy.whitelistNameFile) != 0 {
 		*queryPlugins = append(*queryPlugins, Plugin(new(PluginWhitelistName)))
 	}
+
+	*queryPlugins = append(*queryPlugins, Plugin(new(PluginFirefox)))
+
 	if len(proxy.blockNameFile) != 0 {
 		*queryPlugins = append(*queryPlugins, Plugin(new(PluginBlockName)))
 	}
@@ -145,11 +153,11 @@ func InitPluginsGlobals(pluginsGlobals *PluginsGlobals, proxy *Proxy) error {
 }
 
 // blockedQueryResponse can be 'refused', 'hinfo' or IP responses 'a:IPv4,aaaa:IPv6
-func parseBlockedQueryResponse(bockedResponse string, pluginsGlobals *PluginsGlobals) {
-	bockedResponse = strings.ReplaceAll(strings.ToLower(bockedResponse), " ", "")
+func parseBlockedQueryResponse(blockedResponse string, pluginsGlobals *PluginsGlobals) {
+	blockedResponse = StringStripSpaces(strings.ToLower(blockedResponse))
 
-	if strings.HasPrefix(bockedResponse, "a:") {
-		blockedIPStrings := strings.Split(bockedResponse, ",")
+	if strings.HasPrefix(blockedResponse, "a:") {
+		blockedIPStrings := strings.Split(blockedResponse, ",")
 		(*pluginsGlobals).respondWithIPv4 = net.ParseIP(strings.TrimPrefix(blockedIPStrings[0], "a:"))
 
 		if (*pluginsGlobals).respondWithIPv4 == nil {
@@ -179,13 +187,13 @@ func parseBlockedQueryResponse(bockedResponse string, pluginsGlobals *PluginsGlo
 		}
 
 	} else {
-		switch bockedResponse {
+		switch blockedResponse {
 		case "refused":
 			(*pluginsGlobals).refusedCodeInResponses = true
 		case "hinfo":
 			(*pluginsGlobals).refusedCodeInResponses = false
 		default:
-			dlog.Noticef("Invalid blocked_query_response option [%s], defaulting to `hinfo`", bockedResponse)
+			dlog.Noticef("Invalid blocked_query_response option [%s], defaulting to `hinfo`", blockedResponse)
 			(*pluginsGlobals).refusedCodeInResponses = false
 		}
 	}
@@ -202,17 +210,18 @@ type Plugin interface {
 
 func NewPluginsState(proxy *Proxy, clientProto string, clientAddr *net.Addr, start time.Time) PluginsState {
 	return PluginsState{
-		action:         PluginsActionForward,
-		maxPayloadSize: MaxDNSUDPPacketSize - ResponseOverhead,
-		clientProto:    clientProto,
-		clientAddr:     clientAddr,
-		cacheSize:      proxy.cacheSize,
-		cacheNegMinTTL: proxy.cacheNegMinTTL,
-		cacheNegMaxTTL: proxy.cacheNegMaxTTL,
-		cacheMinTTL:    proxy.cacheMinTTL,
-		cacheMaxTTL:    proxy.cacheMaxTTL,
-		questionMsg:    nil,
-		requestStart:   start,
+		action:                           PluginsActionForward,
+		maxPayloadSize:                   MaxDNSUDPPacketSize - ResponseOverhead,
+		clientProto:                      clientProto,
+		clientAddr:                       clientAddr,
+		cacheSize:                        proxy.cacheSize,
+		cacheNegMinTTL:                   proxy.cacheNegMinTTL,
+		cacheNegMaxTTL:                   proxy.cacheNegMaxTTL,
+		cacheMinTTL:                      proxy.cacheMinTTL,
+		cacheMaxTTL:                      proxy.cacheMaxTTL,
+		questionMsg:                      nil,
+		requestStart:                     start,
+		maxUnencryptedUDPSafePayloadSize: MaxDNSUDPSafePacketSize,
 	}
 }
 

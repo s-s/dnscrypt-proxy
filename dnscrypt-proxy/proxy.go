@@ -2,6 +2,7 @@ package main
 
 import (
 	crypto_rand "crypto/rand"
+	"encoding/binary"
 	"io"
 	"io/ioutil"
 	"net"
@@ -10,10 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cloudflare/circl/dh/x25519"
 	"github.com/jedisct1/dlog"
 	clocksmith "github.com/jedisct1/go-clocksmith"
 	stamps "github.com/jedisct1/go-dnsstamps"
+	"golang.org/x/crypto/curve25519"
 
     "github.com/korovkin/limiter"
 )
@@ -67,6 +68,8 @@ type Proxy struct {
 	logMaxAge                    int
 	logMaxBackups                int
 	blockedQueryResponse         string
+	queryMeta                    []string
+	routes                       *map[string][]string
 	showCerts                    bool
 
 	ReadyCallback chan bool
@@ -86,12 +89,7 @@ func (proxy *Proxy) StartProxy() {
 	if _, err := crypto_rand.Read(proxy.proxySecretKey[:]); err != nil {
 		dlog.Fatal(err)
 	}
-
-	var cfProxyPublicKey, cfProxySecretKey x25519.Key
-	copy(cfProxySecretKey[:], proxy.proxySecretKey[:])
-	x25519.KeyGen(&cfProxyPublicKey, &cfProxySecretKey)
-	copy(proxy.proxyPublicKey[:], cfProxyPublicKey[:])
-
+	curve25519.ScalarBaseMult(&proxy.proxyPublicKey, &proxy.proxySecretKey)
 	for _, registeredServer := range proxy.registeredServers {
 		proxy.serversInfo.registerServer(proxy, registeredServer.name, registeredServer.stamp)
 	}
@@ -360,12 +358,29 @@ func (proxy *Proxy) tcpListenerFromAddr(listenAddr *net.TCPAddr) error {
 	return nil
 }
 
+func (proxy *Proxy) prepareForRelay(ip net.IP, port int, encryptedQuery *[]byte) {
+	anonymizedDNSHeader := []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00}
+	relayedQuery := append(anonymizedDNSHeader, ip.To16()...)
+	var tmp [2]byte
+	binary.BigEndian.PutUint16(tmp[0:2], uint16(port))
+	relayedQuery = append(relayedQuery, tmp[:]...)
+	relayedQuery = append(relayedQuery, *encryptedQuery...)
+	*encryptedQuery = relayedQuery
+}
+
 func (proxy *Proxy) exchangeWithUDPServer(serverInfo *ServerInfo, sharedKey *[32]byte, encryptedQuery []byte, clientNonce []byte) ([]byte, error) {
-	pc, err := net.DialUDP("udp", nil, serverInfo.UDPAddr)
+	upstreamAddr := serverInfo.UDPAddr
+	if serverInfo.RelayUDPAddr != nil {
+		upstreamAddr = serverInfo.RelayUDPAddr
+	}
+	pc, err := net.DialUDP("udp", nil, upstreamAddr)
 	if err != nil {
 		return nil, err
 	}
 	pc.SetDeadline(time.Now().Add(serverInfo.Timeout))
+	if serverInfo.RelayUDPAddr != nil {
+		proxy.prepareForRelay(serverInfo.UDPAddr.IP, serverInfo.UDPAddr.Port, &encryptedQuery)
+	}
 	pc.Write(encryptedQuery)
 	encryptedResponse := make([]byte, MaxDNSPacketSize)
 	length, err := pc.Read(encryptedResponse)
@@ -378,18 +393,25 @@ func (proxy *Proxy) exchangeWithUDPServer(serverInfo *ServerInfo, sharedKey *[32
 }
 
 func (proxy *Proxy) exchangeWithTCPServer(serverInfo *ServerInfo, sharedKey *[32]byte, encryptedQuery []byte, clientNonce []byte) ([]byte, error) {
+	upstreamAddr := serverInfo.TCPAddr
+	if serverInfo.RelayUDPAddr != nil {
+		upstreamAddr = serverInfo.RelayTCPAddr
+	}
 	var err error
 	var pc net.Conn
 	proxyDialer := proxy.xTransport.proxyDialer
 	if proxyDialer == nil {
-		pc, err = net.Dial("tcp", serverInfo.TCPAddr.String())
+		pc, err = net.DialTCP("tcp", nil, upstreamAddr)
 	} else {
-		pc, err = (*proxyDialer).Dial("tcp", serverInfo.TCPAddr.String())
+		pc, err = (*proxyDialer).Dial("tcp", upstreamAddr.String())
 	}
 	if err != nil {
 		return nil, err
 	}
 	pc.SetDeadline(time.Now().Add(serverInfo.Timeout))
+	if serverInfo.RelayTCPAddr != nil {
+		proxy.prepareForRelay(serverInfo.TCPAddr.IP, serverInfo.TCPAddr.Port, &encryptedQuery)
+	}
 	encryptedQuery, err = PrefixWithSize(encryptedQuery)
 	if err != nil {
 		return nil, err
@@ -481,6 +503,10 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 			serverInfo.noticeBegin(proxy)
 			if serverProto == "udp" {
 				response, err = proxy.exchangeWithUDPServer(serverInfo, sharedKey, encryptedQuery, clientNonce)
+				if err == nil && len(response) >= MinDNSPacketSize && response[2]&0x02 == 0x02 {
+					dlog.Debug("Truncated response over UDP, retrying over TCP")
+					response, err = proxy.exchangeWithTCPServer(serverInfo, sharedKey, encryptedQuery, clientNonce)
+				}
 			} else {
 				response, err = proxy.exchangeWithTCPServer(serverInfo, sharedKey, encryptedQuery, clientNonce)
 			}
@@ -545,7 +571,7 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 		return nil
 	}
 	if clientProto == "udp" {
-		if len(response) > MaxDNSUDPPacketSize {
+		if len(response) > pluginsState.maxUnencryptedUDPSafePayloadSize {
 			response, err = TruncatedResponse(response)
 			if err != nil {
 				pluginsState.returnCode = PluginsReturnCodeParseError

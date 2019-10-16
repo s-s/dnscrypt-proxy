@@ -43,6 +43,8 @@ type ServerInfo struct {
 	HostName           string
 	UDPAddr            *net.UDPAddr
 	TCPAddr            *net.TCPAddr
+	RelayUDPAddr       *net.UDPAddr
+	RelayTCPAddr       *net.TCPAddr
 	lastActionTS       time.Time
 	rtt                ewma.MovingAverage
 	initialRtt         int
@@ -275,6 +277,49 @@ func (serversInfo *ServersInfo) fetchDNSCryptServerInfo(proxy *Proxy, name strin
 		dlog.Debugf("[%s] refresh DNSCrypt server info - ResolveTCPAddr fail [%s]", name, err.Error())
 		return ServerInfo{}, err
 	}
+	var relayUDPAddr *net.UDPAddr
+	var relayTCPAddr *net.TCPAddr
+	routes := proxy.routes
+	if routes != nil {
+		if relayNames, ok := (*routes)[name]; ok {
+			var relayName string
+			if len(relayNames) > 0 {
+				candidate := rand.Intn(len(relayNames))
+				relayName = relayNames[candidate]
+			}
+			var relayCandidateStamp *stamps.ServerStamp
+			if len(relayName) == 0 {
+				dlog.Errorf("Route declared for [%v] but an empty relay list", name)
+			} else if stamp, err = stamps.NewServerStampFromString(relayName); err == nil {
+				relayCandidateStamp = &stamp
+			} else if _, err := net.ResolveUDPAddr("udp", relayName); err == nil {
+				relayCandidateStamp = &stamps.ServerStamp{
+					ServerAddrStr: relayName,
+					Proto:         stamps.StampProtoTypeDNSCryptRelay,
+				}
+			} else {
+				for _, registeredServer := range proxy.registeredServers {
+					if registeredServer.name == relayName {
+						relayCandidateStamp = &registeredServer.stamp
+					}
+				}
+			}
+			if relayCandidateStamp != nil &&
+				(relayCandidateStamp.Proto == stamps.StampProtoTypeDNSCrypt ||
+					relayCandidateStamp.Proto == stamps.StampProtoTypeDNSCryptRelay) {
+				relayUDPAddr, err = net.ResolveUDPAddr("udp", relayCandidateStamp.ServerAddrStr)
+				if err != nil {
+					return ServerInfo{}, err
+				}
+				relayTCPAddr, err = net.ResolveTCPAddr("tcp", relayCandidateStamp.ServerAddrStr)
+				if err != nil {
+					return ServerInfo{}, err
+				}
+			} else {
+				dlog.Errorf("Invalid relay [%v] for server [%v]", relayName, name)
+			}
+		}
+	}
 	dlog.Debugf("[%s] refresh DNSCrypt server info - OK", name)
 	return ServerInfo{
 		Proto:              stamps.StampProtoTypeDNSCrypt,
@@ -286,6 +331,8 @@ func (serversInfo *ServersInfo) fetchDNSCryptServerInfo(proxy *Proxy, name strin
 		Timeout:            proxy.timeout,
 		UDPAddr:            remoteUDPAddr,
 		TCPAddr:            remoteTCPAddr,
+		RelayUDPAddr:       relayUDPAddr,
+		RelayTCPAddr:       relayTCPAddr,
 		initialRtt:         rtt,
 	}, nil
 }
