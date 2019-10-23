@@ -100,9 +100,12 @@ force_tcp = false
 # http_proxy = 'http://127.0.0.1:8888'
 
 
-## How long a DNS query will wait for a response, in milliseconds
+## How long a DNS query will wait for a response, in milliseconds.
+## If you have a network with *a lot* of latency, you may need to
+## increase this. Startup may be slower if you do so.
+## Don't increase it too much. 10000 is the highest reasonable value.
 
-timeout = 2500
+timeout = 5000
 
 
 ## Keepalive for HTTP (HTTPS, HTTP/2) queries, in seconds
@@ -263,6 +266,12 @@ log_files_max_backups = 1
 block_ipv6 = false
 
 
+## TTL for synthetic responses sent when a request has been blocked (due to
+## IPv6 or blacklists).
+
+reject_ttl = 600
+
+
 
 ##################################################################################
 #        Route queries for specific domains to a dedicated set of servers        #
@@ -290,6 +299,9 @@ block_ipv6 = false
 
 # cloaking_rules = 'cloaking-rules.txt'
 
+## TTL used when serving entries in cloaking-rules.txt
+
+# cloak_ttl = 600
 
 
 ###########################
@@ -529,6 +541,15 @@ cache_neg_max_ttl = 600
   minisign_key = 'RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3'
   prefix = ''
 
+  ## Anonymized DNS relays
+
+  [sources.'relays']
+  urls = ['https://github.com/DNSCrypt/dnscrypt-resolvers/raw/master/v2/relays.md', 'https://download.dnscrypt.info/resolvers-list/v2/relays.md']
+  cache_file = 'relays.md'
+  minisign_key = 'RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3'
+  refresh_delay = 72
+  prefix = ''
+
   ## Quad9 over DNSCrypt - https://quad9.net/
 
   # [sources.quad9-resolvers]
@@ -552,14 +573,28 @@ cache_neg_max_ttl = 600
 
 [anonymized_dns]
 
-## Define one or more routes, i.e. indirect ways to reach servers.
-## A set of possible relay servers is assigned to each DNS resolver.
+## Routes are indirect ways to reach DNSCrypt servers.
+##
+## A route maps a server name ("server_name") to one or more relays that will be
+## used to connect to that server.
+##
 ## A relay can be specified as a DNS Stamp (either a relay stamp, or a
-## DNSCrypt stamp), an IP:port, a hostname:port, or a server name, if
-## the server is in the servers_list.
+## DNSCrypt stamp), an IP:port, a hostname:port, or a server name.
+##
+## The following example routes "comodo-02" via `anon-kama` or `anon-ibksturm`,
+## and "quad9-dnscrypt-ip4-nofilter-pri" via the relay whose relay DNS stamp
+## is "sdns://gRIxMzcuNzQuMjIzLjIzNDo0NDM".
+## These are just example routes. Review the list of available relays from the
+## "relays.md` file, and, for each server you want to use, define the relays you
+## want connections to go through.
+##
+## Carefully choose relays and servers so that the are run by different entities.
+##
+## "server_name" can also be set to "*" to define a default route, but this is not
+## recommended. if you do so, keep "server_names" short and distinct from relays.
 
 # routes = [
-#    { server_name='comodo-02', via=['sdns://gRIxMzcuNzQuMjIzLjIzNDo0NDM'] },
+#    { server_name='comodo-02', via=['anon-kama', 'anon-ibksturm'] },
 #    { server_name='quad9-dnscrypt-ip4-nofilter-pri', via=['sdns://gRIxMzcuNzQuMjIzLjIzNDo0NDM'] }
 # ]
 

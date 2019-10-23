@@ -1,4 +1,4 @@
-// +build !linux,!windows
+// +build android
 
 package main
 

@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"net"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -75,7 +76,7 @@ func NewServersInfo() ServersInfo {
 	return ServersInfo{lbStrategy: DefaultLBStrategy, lbEstimator: true, registeredServers: make([]RegisteredServer, 0)}
 }
 
-func (serversInfo *ServersInfo) registerServer(proxy *Proxy, name string, stamp stamps.ServerStamp) error {
+func (serversInfo *ServersInfo) registerServer(name string, stamp stamps.ServerStamp) error {
 	newRegisteredServer := RegisteredServer{name: name, stamp: stamp}
 	serversInfo.Lock()
 	defer serversInfo.Unlock()
@@ -91,15 +92,15 @@ func (serversInfo *ServersInfo) registerServer(proxy *Proxy, name string, stamp 
 
 func (serversInfo *ServersInfo) refreshServer(proxy *Proxy, name string, stamp stamps.ServerStamp) error {
 	serversInfo.RLock()
-	previousIndex := -1
-	for i, oldServer := range serversInfo.inner {
+	isNew := true
+	for _, oldServer := range serversInfo.inner {
 		if oldServer.Name == name {
-			previousIndex = i
+			isNew = false
 			break
 		}
 	}
 	serversInfo.RUnlock()
-	newServer, err := serversInfo.fetchServerInfo(proxy, name, stamp, previousIndex < 0)
+	newServer, err := fetchServerInfo(proxy, name, stamp, isNew)
 	if err != nil {
 		if previousIndex >= 0 {
 			serversInfo.Lock()
@@ -113,27 +114,25 @@ func (serversInfo *ServersInfo) refreshServer(proxy *Proxy, name string, stamp s
 	}
 	newServer.rtt = ewma.NewMovingAverage(RTTEwmaDecay)
 	newServer.rtt.Set(float64(newServer.initialRtt))
+	isNew = true
 	serversInfo.Lock()
-	//defer serversInfo.Unlock()
-	previousIndex = -1
 	for i, oldServer := range serversInfo.inner {
 		if oldServer.Name == name {
-			previousIndex = i
+			serversInfo.inner[i] = &newServer
+			isNew = false
 			break
 		}
 	}
-	if previousIndex >= 0 {
-		serversInfo.inner[previousIndex] = &newServer
-		serversInfo.Unlock()
-		return nil
+	if isNew {
+		serversInfo.inner = append(serversInfo.inner, &newServer)
+		//serversInfo.registeredServers = append(serversInfo.registeredServers, RegisteredServer{name: name, stamp: stamp})
+        err = serversInfo.registerServer(proxy, name, stamp)
+        if err != nil {
+            serversInfo.Unlock()
+            return err
+        }
 	}
-	serversInfo.inner = append(serversInfo.inner, &newServer)
-	//serversInfo.registeredServers = append(serversInfo.registeredServers, RegisteredServer{name: name, stamp: stamp})
 	serversInfo.Unlock()
-	err = serversInfo.registerServer(proxy, name, stamp)
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -150,19 +149,11 @@ func (serversInfo *ServersInfo) refresh(proxy *Proxy) (int, error) {
 		}
 	}
 	serversInfo.Lock()
+	sort.SliceStable(serversInfo.inner, func(i, j int) bool {
+		return serversInfo.inner[i].initialRtt < serversInfo.inner[j].initialRtt
+	})
 	inner := serversInfo.inner
 	innerLen := len(inner)
-	if innerLen > 1 {
-		for i := 0; i < innerLen; i++ {
-			for j := i + 1; j < innerLen; j++ {
-				if inner[j].initialRtt < inner[i].initialRtt {
-					inner[j], inner[i] = inner[i], inner[j]
-				}
-			}
-		}
-	}
-	serversInfo.inner = inner
-
 	if innerLen > 1 {
 		dlog.Notice("Sorted latencies:")
 		for i := 0; i < innerLen; i++ {
@@ -171,20 +162,16 @@ func (serversInfo *ServersInfo) refresh(proxy *Proxy) (int, error) {
 	}
 	if innerLen > 0 {
 		dlog.Noticef("Server with the lowest initial latency: %s (rtt: %dms)", inner[0].Name, inner[0].initialRtt)
-		proxy.certIgnoreTimestamp = false
 	}
 	serversInfo.Unlock()
 	return liveServers, err
 }
 
-func (serversInfo *ServersInfo) liveServers() int {
-	serversInfo.RLock()
-	liveServers := len(serversInfo.inner)
-	serversInfo.RUnlock()
-	return liveServers
-}
-
-func (serversInfo *ServersInfo) estimatorUpdate(candidate int) {
+func (serversInfo *ServersInfo) estimatorUpdate() {
+	candidate := rand.Intn(len(serversInfo.inner))
+	if candidate == 0 {
+		return
+	}
 	candidateRtt, currentBestRtt := serversInfo.inner[candidate].rtt.Value(), serversInfo.inner[0].rtt.Value()
 	if currentBestRtt < 0 {
 		currentBestRtt = candidateRtt
@@ -214,45 +201,101 @@ func (serversInfo *ServersInfo) estimatorUpdate(candidate int) {
 
 func (serversInfo *ServersInfo) getOne() *ServerInfo {
 	serversInfo.Lock()
-	defer serversInfo.Unlock()
 	serversCount := len(serversInfo.inner)
 	if serversCount <= 0 {
+		serversInfo.Unlock()
 		return nil
 	}
 	if serversInfo.lbEstimator {
-		candidate := rand.Intn(serversCount)
-		if candidate == 0 {
-			return serversInfo.inner[candidate]
-		}
-		serversInfo.estimatorUpdate(candidate)
+		serversInfo.estimatorUpdate()
 	}
 	var candidate int
 	switch serversInfo.lbStrategy {
 	case LBStrategyFirst:
 		candidate = 0
 	case LBStrategyPH:
-		candidate = rand.Intn(Min(Min(serversCount, 2), serversCount/2))
+		candidate = rand.Intn(Max(Min(serversCount, 2), serversCount/2))
 	case LBStrategyRandom:
 		candidate = rand.Intn(serversCount)
 	default:
 		candidate = rand.Intn(Min(serversCount, 2))
 	}
 	serverInfo := serversInfo.inner[candidate]
+	serversInfo.Unlock()
 	dlog.Debugf("Using candidate [%s] RTT: %d", (*serverInfo).Name, int((*serverInfo).rtt.Value()))
 
 	return serverInfo
 }
 
-func (serversInfo *ServersInfo) fetchServerInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, isNew bool) (ServerInfo, error) {
+func fetchServerInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, isNew bool) (ServerInfo, error) {
 	if stamp.Proto == stamps.StampProtoTypeDNSCrypt {
-		return serversInfo.fetchDNSCryptServerInfo(proxy, name, stamp, isNew)
+		return fetchDNSCryptServerInfo(proxy, name, stamp, isNew)
 	} else if stamp.Proto == stamps.StampProtoTypeDoH {
-		return serversInfo.fetchDoHServerInfo(proxy, name, stamp, isNew)
+		return fetchDoHServerInfo(proxy, name, stamp, isNew)
 	}
 	return ServerInfo{}, errors.New("Unsupported protocol")
 }
 
-func (serversInfo *ServersInfo) fetchDNSCryptServerInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, isNew bool) (ServerInfo, error) {
+func route(proxy *Proxy, name string, stamp *stamps.ServerStamp) (*net.UDPAddr, *net.TCPAddr, error) {
+	routes := proxy.routes
+	if routes == nil {
+		return nil, nil, nil
+	}
+	relayNames, ok := (*routes)[name]
+	if !ok {
+		relayNames, ok = (*routes)["*"]
+	}
+	if !ok {
+		return nil, nil, nil
+	}
+	var relayName string
+	if len(relayNames) > 0 {
+		candidate := rand.Intn(len(relayNames))
+		relayName = relayNames[candidate]
+	}
+	var relayCandidateStamp *stamps.ServerStamp
+	if len(relayName) == 0 {
+		return nil, nil, fmt.Errorf("Route declared for [%v] but an empty relay list", name)
+	} else if relayStamp, err := stamps.NewServerStampFromString(relayName); err == nil {
+		relayCandidateStamp = &relayStamp
+	} else if _, err := net.ResolveUDPAddr("udp", relayName); err == nil {
+		relayCandidateStamp = &stamps.ServerStamp{
+			ServerAddrStr: relayName,
+			Proto:         stamps.StampProtoTypeDNSCryptRelay,
+		}
+	} else {
+		for _, registeredServer := range proxy.registeredRelays {
+			if registeredServer.name == relayName {
+				relayCandidateStamp = &registeredServer.stamp
+				break
+			}
+		}
+		for _, registeredServer := range proxy.registeredServers {
+			if registeredServer.name == relayName {
+				relayCandidateStamp = &registeredServer.stamp
+				break
+			}
+		}
+	}
+	if relayCandidateStamp == nil {
+		return nil, nil, fmt.Errorf("Undefined relay [%v] for server [%v]", relayName, name)
+	}
+	if relayCandidateStamp.Proto == stamps.StampProtoTypeDNSCrypt ||
+		relayCandidateStamp.Proto == stamps.StampProtoTypeDNSCryptRelay {
+		relayUDPAddr, err := net.ResolveUDPAddr("udp", relayCandidateStamp.ServerAddrStr)
+		if err != nil {
+			return nil, nil, err
+		}
+		relayTCPAddr, err := net.ResolveTCPAddr("tcp", relayCandidateStamp.ServerAddrStr)
+		if err != nil {
+			return nil, nil, err
+		}
+		return relayUDPAddr, relayTCPAddr, nil
+	}
+	return nil, nil, fmt.Errorf("Invalid relay [%v] for server [%v]", relayName, name)
+}
+
+func fetchDNSCryptServerInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, isNew bool) (ServerInfo, error) {
 	dlog.Debugf("[%s] fetch DNSCrypt server info - start", name)
 	if len(stamp.ServerPk) != ed25519.PublicKeySize {
 		serverPk, err := hex.DecodeString(strings.Replace(string(stamp.ServerPk), ":", "", -1))
@@ -262,7 +305,11 @@ func (serversInfo *ServersInfo) fetchDNSCryptServerInfo(proxy *Proxy, name strin
 		dlog.Warnf("Public key [%s] shouldn't be hex-encoded any more", string(stamp.ServerPk))
 		stamp.ServerPk = serverPk
 	}
-	certInfo, rtt, err := FetchCurrentDNSCryptCert(proxy, &name, proxy.mainProto, stamp.ServerPk, stamp.ServerAddrStr, stamp.ProviderName, isNew)
+	relayUDPAddr, relayTCPAddr, err := route(proxy, name, &stamp)
+	if err != nil {
+		return ServerInfo{}, err
+	}
+	certInfo, rtt, err := FetchCurrentDNSCryptCert(proxy, &name, proxy.mainProto, stamp.ServerPk, stamp.ServerAddrStr, stamp.ProviderName, isNew, relayUDPAddr, relayTCPAddr)
 	if err != nil {
 		dlog.Debugf("[%s] refresh DNSCrypt server info - FetchCurrentDNSCryptCert fail [%s]", name, err.Error())
 		return ServerInfo{}, err
@@ -277,50 +324,8 @@ func (serversInfo *ServersInfo) fetchDNSCryptServerInfo(proxy *Proxy, name strin
 		dlog.Debugf("[%s] refresh DNSCrypt server info - ResolveTCPAddr fail [%s]", name, err.Error())
 		return ServerInfo{}, err
 	}
-	var relayUDPAddr *net.UDPAddr
-	var relayTCPAddr *net.TCPAddr
-	routes := proxy.routes
-	if routes != nil {
-		if relayNames, ok := (*routes)[name]; ok {
-			var relayName string
-			if len(relayNames) > 0 {
-				candidate := rand.Intn(len(relayNames))
-				relayName = relayNames[candidate]
-			}
-			var relayCandidateStamp *stamps.ServerStamp
-			if len(relayName) == 0 {
-				dlog.Errorf("Route declared for [%v] but an empty relay list", name)
-			} else if stamp, err = stamps.NewServerStampFromString(relayName); err == nil {
-				relayCandidateStamp = &stamp
-			} else if _, err := net.ResolveUDPAddr("udp", relayName); err == nil {
-				relayCandidateStamp = &stamps.ServerStamp{
-					ServerAddrStr: relayName,
-					Proto:         stamps.StampProtoTypeDNSCryptRelay,
-				}
-			} else {
-				for _, registeredServer := range proxy.registeredServers {
-					if registeredServer.name == relayName {
-						relayCandidateStamp = &registeredServer.stamp
-					}
-				}
-			}
-			if relayCandidateStamp != nil &&
-				(relayCandidateStamp.Proto == stamps.StampProtoTypeDNSCrypt ||
-					relayCandidateStamp.Proto == stamps.StampProtoTypeDNSCryptRelay) {
-				relayUDPAddr, err = net.ResolveUDPAddr("udp", relayCandidateStamp.ServerAddrStr)
-				if err != nil {
-					return ServerInfo{}, err
-				}
-				relayTCPAddr, err = net.ResolveTCPAddr("tcp", relayCandidateStamp.ServerAddrStr)
-				if err != nil {
-					return ServerInfo{}, err
-				}
-			} else {
-				dlog.Errorf("Invalid relay [%v] for server [%v]", relayName, name)
-			}
-		}
-	}
-	dlog.Debugf("[%s] refresh DNSCrypt server info - OK", name)
+
+    dlog.Debugf("[%s] refresh DNSCrypt server info - OK", name)
 	return ServerInfo{
 		Proto:              stamps.StampProtoTypeDNSCrypt,
 		MagicQuery:         certInfo.MagicQuery,
@@ -337,14 +342,13 @@ func (serversInfo *ServersInfo) fetchDNSCryptServerInfo(proxy *Proxy, name strin
 	}, nil
 }
 
-func (serversInfo *ServersInfo) fetchDoHServerInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, isNew bool) (ServerInfo, error) {
+func fetchDoHServerInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, isNew bool) (ServerInfo, error) {
 	dlog.Debugf("[%s] fetch DoH server info - start", name)
 	if len(stamp.ServerAddrStr) > 0 {
-		addrStr := stamp.ServerAddrStr
-		ipOnly := addrStr[:strings.LastIndex(addrStr, ":")]
-		proxy.xTransport.cachedIPs.Lock()
-		proxy.xTransport.cachedIPs.cache[name+"#"+stamp.ProviderName] = ipOnly
-		proxy.xTransport.cachedIPs.Unlock()
+		ipOnly, _ := ExtractHostAndPort(stamp.ServerAddrStr, -1)
+		if ip := ParseIP(ipOnly); ip != nil {
+			proxy.xTransport.saveCachedIP(name+"#"+stamp.ProviderName, ip, -1*time.Second)
+		}
 	}
 	url := &url.URL{
 		Scheme: "https",

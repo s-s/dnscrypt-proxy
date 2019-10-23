@@ -44,6 +44,7 @@ const (
 	PluginsReturnCodeResponseError
 	PluginsReturnCodeServerError
 	PluginsReturnCodeCloak
+	PluginsReturnCodeServerTimeout
 )
 
 var PluginsReturnCodeToString = map[PluginsReturnCode]string{
@@ -57,6 +58,7 @@ var PluginsReturnCodeToString = map[PluginsReturnCode]string{
 	PluginsReturnCodeResponseError: "RESPONSE_ERROR",
 	PluginsReturnCodeServerError:   "SERVER_ERROR",
 	PluginsReturnCodeCloak:         "CLOAK",
+	PluginsReturnCodeServerTimeout: "SERVER_TIMEOUT",
 }
 
 type PluginsState struct {
@@ -74,6 +76,7 @@ type PluginsState struct {
 	cacheNegMaxTTL                   uint32
 	cacheMinTTL                      uint32
 	cacheMaxTTL                      uint32
+	rejectTTL                        uint32
 	questionMsg                      *dns.Msg
 	requestStart                     time.Time
 	requestEnd                       time.Time
@@ -82,7 +85,7 @@ type PluginsState struct {
 	serverName                       string
 }
 
-func InitPluginsGlobals(pluginsGlobals *PluginsGlobals, proxy *Proxy) error {
+func (proxy *Proxy) InitPluginsGlobals() error {
 	queryPlugins := &[]Plugin{}
 
 	if len(proxy.queryMeta) != 0 {
@@ -143,11 +146,11 @@ func InitPluginsGlobals(pluginsGlobals *PluginsGlobals, proxy *Proxy) error {
 		}
 	}
 
-	(*pluginsGlobals).queryPlugins = queryPlugins
-	(*pluginsGlobals).responsePlugins = responsePlugins
-	(*pluginsGlobals).loggingPlugins = loggingPlugins
+	proxy.pluginsGlobals.queryPlugins = queryPlugins
+	proxy.pluginsGlobals.responsePlugins = responsePlugins
+	proxy.pluginsGlobals.loggingPlugins = loggingPlugins
 
-	parseBlockedQueryResponse(proxy.blockedQueryResponse, pluginsGlobals)
+	parseBlockedQueryResponse(proxy.blockedQueryResponse, &proxy.pluginsGlobals)
 
 	return nil
 }
@@ -219,6 +222,7 @@ func NewPluginsState(proxy *Proxy, clientProto string, clientAddr *net.Addr, sta
 		cacheNegMaxTTL:                   proxy.cacheNegMaxTTL,
 		cacheMinTTL:                      proxy.cacheMinTTL,
 		cacheMaxTTL:                      proxy.cacheMaxTTL,
+		rejectTTL:                        proxy.rejectTTL,
 		questionMsg:                      nil,
 		requestStart:                     start,
 		maxUnencryptedUDPSafePayloadSize: MaxDNSUDPSafePacketSize,
@@ -240,14 +244,14 @@ func (pluginsState *PluginsState) ApplyQueryPlugins(pluginsGlobals *PluginsGloba
 	}
 	pluginsState.questionMsg = &msg
 	pluginsGlobals.RLock()
+	defer pluginsGlobals.RUnlock()
 	for _, plugin := range *pluginsGlobals.queryPlugins {
-		if ret := plugin.Eval(pluginsState, &msg); ret != nil {
-			pluginsGlobals.RUnlock()
+		if err := plugin.Eval(pluginsState, &msg); err != nil {
 			pluginsState.action = PluginsActionDrop
-			return packet, ret
+			return packet, err
 		}
 		if pluginsState.action == PluginsActionReject {
-			synth, err := RefusedResponseFromMessage(&msg, pluginsGlobals.refusedCodeInResponses, pluginsGlobals.respondWithIPv4, pluginsGlobals.respondWithIPv6, pluginsState.cacheMinTTL)
+			synth, err := RefusedResponseFromMessage(&msg, pluginsGlobals.refusedCodeInResponses, pluginsGlobals.respondWithIPv4, pluginsGlobals.respondWithIPv6, pluginsState.rejectTTL)
 			if err != nil {
 				return nil, err
 			}
@@ -257,7 +261,6 @@ func (pluginsState *PluginsState) ApplyQueryPlugins(pluginsGlobals *PluginsGloba
 			break
 		}
 	}
-	pluginsGlobals.RUnlock()
 	packet2, err := msg.PackBuffer(packet)
 	if err != nil {
 		return packet, err
@@ -288,14 +291,14 @@ func (pluginsState *PluginsState) ApplyResponsePlugins(pluginsGlobals *PluginsGl
 		pluginsState.returnCode = PluginsReturnCodeResponseError
 	}
 	pluginsGlobals.RLock()
+	defer pluginsGlobals.RUnlock()
 	for _, plugin := range *pluginsGlobals.responsePlugins {
-		if ret := plugin.Eval(pluginsState, &msg); ret != nil {
-			pluginsGlobals.RUnlock()
+		if err := plugin.Eval(pluginsState, &msg); err != nil {
 			pluginsState.action = PluginsActionDrop
-			return packet, ret
+			return packet, err
 		}
 		if pluginsState.action == PluginsActionReject {
-			synth, err := RefusedResponseFromMessage(&msg, pluginsGlobals.refusedCodeInResponses, pluginsGlobals.respondWithIPv4, pluginsGlobals.respondWithIPv6, pluginsState.cacheMinTTL)
+			synth, err := RefusedResponseFromMessage(&msg, pluginsGlobals.refusedCodeInResponses, pluginsGlobals.respondWithIPv4, pluginsGlobals.respondWithIPv6, pluginsState.rejectTTL)
 			if err != nil {
 				return nil, err
 			}
@@ -306,7 +309,6 @@ func (pluginsState *PluginsState) ApplyResponsePlugins(pluginsGlobals *PluginsGl
 			break
 		}
 	}
-	pluginsGlobals.RUnlock()
 	if ttl != nil {
 		setMaxTTL(&msg, *ttl)
 	}
@@ -327,12 +329,11 @@ func (pluginsState *PluginsState) ApplyLoggingPlugins(pluginsGlobals *PluginsGlo
 		return errors.New("Unexpected number of questions")
 	}
 	pluginsGlobals.RLock()
+	defer pluginsGlobals.RUnlock()
 	for _, plugin := range *pluginsGlobals.loggingPlugins {
-		if ret := plugin.Eval(pluginsState, questionMsg); ret != nil {
-			pluginsGlobals.RUnlock()
-			return ret
+		if err := plugin.Eval(pluginsState, questionMsg); err != nil {
+			return err
 		}
 	}
-	pluginsGlobals.RUnlock()
 	return nil
 }
