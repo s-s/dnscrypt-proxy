@@ -102,9 +102,16 @@ func (serversInfo *ServersInfo) refreshServer(proxy *Proxy, name string, stamp s
 	serversInfo.RUnlock()
 	newServer, err := fetchServerInfo(proxy, name, stamp, isNew)
 	if err != nil {
-		if previousIndex >= 0 {
+		if !isNew {
 			serversInfo.Lock()
-			serversInfo.inner = append(serversInfo.inner[:previousIndex], serversInfo.inner[previousIndex+1:]...)
+			n := 0
+			for _, oldServer := range serversInfo.inner {
+				if oldServer.Name != name {
+					serversInfo.inner[n] = oldServer
+					n++
+				}
+			}
+			serversInfo.inner = serversInfo.inner[:n]
 			serversInfo.Unlock()
 		}
 		return err
@@ -126,11 +133,11 @@ func (serversInfo *ServersInfo) refreshServer(proxy *Proxy, name string, stamp s
 	if isNew {
 		serversInfo.inner = append(serversInfo.inner, &newServer)
 		//serversInfo.registeredServers = append(serversInfo.registeredServers, RegisteredServer{name: name, stamp: stamp})
-        err = serversInfo.registerServer(proxy, name, stamp)
-        if err != nil {
-            serversInfo.Unlock()
-            return err
-        }
+		err = serversInfo.registerServer(proxy, name, stamp)
+		if err != nil {
+			serversInfo.Unlock()
+			return err
+		}
 	}
 	serversInfo.Unlock()
 	return nil
@@ -325,7 +332,7 @@ func fetchDNSCryptServerInfo(proxy *Proxy, name string, stamp stamps.ServerStamp
 		return ServerInfo{}, err
 	}
 
-    dlog.Debugf("[%s] refresh DNSCrypt server info - OK", name)
+	dlog.Debugf("[%s] refresh DNSCrypt server info - OK", name)
 	return ServerInfo{
 		Proto:              stamps.StampProtoTypeDNSCrypt,
 		MagicQuery:         certInfo.MagicQuery,
