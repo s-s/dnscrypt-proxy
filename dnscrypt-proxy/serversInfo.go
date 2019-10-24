@@ -132,14 +132,15 @@ func (serversInfo *ServersInfo) refreshServer(proxy *Proxy, name string, stamp s
 	}
 	if isNew {
 		serversInfo.inner = append(serversInfo.inner, &newServer)
+		serversInfo.Unlock()
 		//serversInfo.registeredServers = append(serversInfo.registeredServers, RegisteredServer{name: name, stamp: stamp})
 		err = serversInfo.registerServer(name, stamp)
 		if err != nil {
-			serversInfo.Unlock()
 			return err
 		}
+	} else {
+		serversInfo.Unlock()
 	}
-	serversInfo.Unlock()
 	return nil
 }
 
