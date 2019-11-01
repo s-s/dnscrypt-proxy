@@ -20,9 +20,9 @@ require (
 	github.com/k-sone/critbitgo v1.3.0
 	github.com/kardianos/service v1.0.0
 	github.com/miekg/dns v1.1.22
-	golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550
-	golang.org/x/net v0.0.0-20191011234655-491137f69257
-	golang.org/x/sys v0.0.0-20191010194322-b09406accb47
+	golang.org/x/crypto v0.0.0-20191029031824-8986dd9e96cf
+	golang.org/x/net v0.0.0-20191028085509-fe3aa8a45271
+	golang.org/x/sys v0.0.0-20191029155521-f43be2a4598c
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/yaml.v2 v2.2.2 // indirect
 )

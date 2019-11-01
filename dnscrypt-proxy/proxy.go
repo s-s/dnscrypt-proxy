@@ -133,11 +133,11 @@ func (proxy *Proxy) StartProxy() {
 
 				fdUDP, err := listenerUDP.File() // On Windows, the File method of UDPConn is not implemented.
 				if err != nil {
-					dlog.Fatal(err)
+					dlog.Fatalf("Unable to switch to a different user: %v", err)
 				}
 				fdTCP, err := listenerTCP.File() // On Windows, the File method of TCPListener is not implemented.
 				if err != nil {
-					dlog.Fatal(err)
+					dlog.Fatalf("Unable to switch to a different user: %v", err)
 				}
 				defer listenerUDP.Close()
 				defer listenerTCP.Close()
@@ -149,13 +149,13 @@ func (proxy *Proxy) StartProxy() {
 				// child
 				listenerUDP, err := net.FilePacketConn(os.NewFile(uintptr(3+FileDescriptorNum), "listenerUDP"))
 				if err != nil {
-					dlog.Fatal(err)
+					dlog.Fatalf("Unable to switch to a different user: %v", err)
 				}
 				FileDescriptorNum++
 
 				listenerTCP, err := net.FileListener(os.NewFile(uintptr(3+FileDescriptorNum), "listenerTCP"))
 				if err != nil {
-					dlog.Fatal(err)
+					dlog.Fatalf("Unable to switch to a different user: %v", err)
 				}
 				FileDescriptorNum++
 
@@ -515,7 +515,7 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 				response, err = proxy.exchangeWithUDPServer(serverInfo, sharedKey, encryptedQuery, clientNonce)
 				if err == nil && len(response) >= MinDNSPacketSize && response[2]&0x02 == 0x02 {
 					serverProto = "tcp"
-					sharedKey, encryptedQuery, clientNonce, err := proxy.Encrypt(serverInfo, query, serverProto)
+					sharedKey, encryptedQuery, clientNonce, err = proxy.Encrypt(serverInfo, query, serverProto)
 					if err != nil {
 						pluginsState.returnCode = PluginsReturnCodeParseError
 						return err
