@@ -75,18 +75,17 @@ func NewServersInfo() ServersInfo {
 	return ServersInfo{lbStrategy: DefaultLBStrategy, lbEstimator: true, registeredServers: make([]RegisteredServer, 0)}
 }
 
-func (serversInfo *ServersInfo) registerServer(name string, stamp stamps.ServerStamp) error {
+func (serversInfo *ServersInfo) registerServer(name string, stamp stamps.ServerStamp) {
 	newRegisteredServer := RegisteredServer{name: name, stamp: stamp}
 	serversInfo.Lock()
 	defer serversInfo.Unlock()
 	for i, oldRegisteredServer := range serversInfo.registeredServers {
 		if oldRegisteredServer.name == name {
 			serversInfo.registeredServers[i] = newRegisteredServer
-			return nil
+			return
 		}
 	}
 	serversInfo.registeredServers = append(serversInfo.registeredServers, newRegisteredServer)
-	return nil
 }
 
 func (serversInfo *ServersInfo) refreshServer(proxy *Proxy, name string, stamp stamps.ServerStamp) error {
@@ -209,9 +208,9 @@ func (serversInfo *ServersInfo) estimatorUpdate() {
 
 func (serversInfo *ServersInfo) getOne() *ServerInfo {
 	serversInfo.Lock()
-	defer serversInfo.Unlock()
 	serversCount := len(serversInfo.inner)
 	if serversCount <= 0 {
+		serversInfo.Unlock()
 		return nil
 	}
 	if serversInfo.lbEstimator {
@@ -230,6 +229,7 @@ func (serversInfo *ServersInfo) getOne() *ServerInfo {
 	}
 	serverInfo := serversInfo.inner[candidate]
 	dlog.Debugf("Using candidate [%s] RTT: %d", (*serverInfo).Name, int((*serverInfo).rtt.Value()))
+	serversInfo.Unlock()
 
 	return serverInfo
 }
@@ -243,7 +243,7 @@ func fetchServerInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, isNew 
 	return ServerInfo{}, errors.New("Unsupported protocol")
 }
 
-func route(proxy *Proxy, name string, stamp *stamps.ServerStamp) (*net.UDPAddr, *net.TCPAddr, error) {
+func route(proxy *Proxy, name string) (*net.UDPAddr, *net.TCPAddr, error) {
 	routes := proxy.routes
 	if routes == nil {
 		return nil, nil, nil
@@ -312,7 +312,7 @@ func fetchDNSCryptServerInfo(proxy *Proxy, name string, stamp stamps.ServerStamp
 		dlog.Warnf("Public key [%s] shouldn't be hex-encoded any more", string(stamp.ServerPk))
 		stamp.ServerPk = serverPk
 	}
-	relayUDPAddr, relayTCPAddr, err := route(proxy, name, &stamp)
+	relayUDPAddr, relayTCPAddr, err := route(proxy, name)
 	if err != nil {
 		return ServerInfo{}, err
 	}
@@ -350,6 +350,10 @@ func fetchDNSCryptServerInfo(proxy *Proxy, name string, stamp stamps.ServerStamp
 }
 
 func fetchDoHServerInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, isNew bool) (ServerInfo, error) {
+	// If an IP has been provided, use it forever.
+	// Or else, if the fallback server and the DoH server are operated
+	// by the same entity, it could provide a unique IPv6 for each client
+	// in order to fingerprint clients across multiple IP addresses.
 	dlog.Debugf("[%s] fetch DoH server info - start", name)
 	if len(stamp.ServerAddrStr) > 0 {
 		ipOnly, _ := ExtractHostAndPort(stamp.ServerAddrStr, -1)

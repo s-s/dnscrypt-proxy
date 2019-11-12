@@ -29,7 +29,9 @@ const (
 	DefaultFallbackResolver = "9.9.9.9:53"
 	DefaultKeepAlive        = 5 * time.Second
 	DefaultTimeout          = 30 * time.Second
-	SystemResolverTTL       = 24 * time.Hour
+	SystemRresolverIPTTL    = 24 * time.Hour
+	MinRresolverIPTTL       = 8 * time.Hour
+	ExpiredCachedIPGraceTTL = 5 * time.Minute
 )
 
 type CachedIPItem struct {
@@ -63,7 +65,7 @@ type cachePrefixContextKey string
 const cachePrefixKey = cachePrefixContextKey("cachePrefix")
 
 func NewXTransport() *XTransport {
-	if err := CheckResolver(DefaultFallbackResolver); err != nil {
+	if err := isIPAndPort(DefaultFallbackResolver); err != nil {
 		panic("DefaultFallbackResolver does not parse")
 	}
 	xTransport := XTransport{
@@ -86,12 +88,12 @@ func ParseIP(ipStr string) net.IP {
 }
 
 // If ttl < 0, never expire
-// Otherwise, ttl is set to max(ttl, xTransport.timeout)
+// Otherwise, ttl is set to max(ttl, MinRresolverIPTTL)
 func (xTransport *XTransport) saveCachedIP(host string, ip net.IP, ttl time.Duration) {
 	item := &CachedIPItem{ip: ip, expiration: nil}
 	if ttl >= 0 {
-		if ttl < xTransport.timeout {
-			ttl = xTransport.timeout
+		if ttl < MinRresolverIPTTL {
+			ttl = MinRresolverIPTTL
 		}
 		expiration := time.Now().Add(ttl)
 		item.expiration = &expiration
@@ -101,21 +103,20 @@ func (xTransport *XTransport) saveCachedIP(host string, ip net.IP, ttl time.Dura
 	xTransport.cachedIPs.Unlock()
 }
 
-func (xTransport *XTransport) loadCachedIP(host string, deleteIfExpired bool) (net.IP, bool) {
+func (xTransport *XTransport) loadCachedIP(host string) (ip net.IP, expired bool) {
+	ip, expired = nil, false
 	xTransport.cachedIPs.RLock()
 	item, ok := xTransport.cachedIPs.cache[host]
 	xTransport.cachedIPs.RUnlock()
 	if !ok {
-		return nil, false
+		return
 	}
+	ip = item.ip
 	expiration := item.expiration
-	if deleteIfExpired && expiration != nil && time.Until(*expiration) < 0 {
-		xTransport.cachedIPs.Lock()
-		delete(xTransport.cachedIPs.cache, host)
-		xTransport.cachedIPs.Unlock()
-		return nil, false
+	if expiration != nil && time.Until(*expiration) < 0 {
+		expired = true
 	}
-	return item.ip, ok
+	return
 }
 
 func (xTransport *XTransport) rebuildTransport() {
@@ -135,12 +136,14 @@ func (xTransport *XTransport) rebuildTransport() {
 		DialContext: func(ctx context.Context, network, addrStr string) (net.Conn, error) {
 			host, port := ExtractHostAndPort(addrStr, stamps.DefaultPort)
 			ipOnly := host
+			// resolveWithCache() is always called in `Fetch()` before the `Dial()`
+			// method is used, so that a cached entry must be present at this point.
             cacheKey := host
             if v := ctx.Value(cachePrefixKey); v != nil {
                 cacheKey = v.(string) + "#" + host
             }
-			cachedIP, ok := xTransport.loadCachedIP(cacheKey, false)
-			if ok {
+			cachedIP, _ := xTransport.loadCachedIP(cacheKey)
+			if cachedIP != nil {
 				if ipv4 := cachedIP.To4(); ipv4 != nil {
 					ipOnly = ipv4.String()
 				} else {
@@ -178,7 +181,7 @@ func (xTransport *XTransport) rebuildTransport() {
 }
 
 func (xTransport *XTransport) resolveUsingSystem(host string) (ip net.IP, ttl time.Duration, err error) {
-	ttl = SystemResolverTTL
+	ttl = SystemRresolverIPTTL
 	var foundIPs []string
 	foundIPs, err = net.LookupHost(host)
 	if err != nil {
@@ -250,14 +253,16 @@ func (xTransport *XTransport) resolveUsingResolver(proto, host string, resolver 
 	return
 }
 
-func (xTransport *XTransport) resolveHost(host string, cachePrefix string) (err error) {
+// Return a cached entry, or resolve a name and update the cache
+func (xTransport *XTransport) resolveWithCache(host string, cachePrefix string) (err error) {
 	if xTransport.proxyDialer != nil || xTransport.httpProxyFunction != nil {
 		return
 	}
 	if ParseIP(host) != nil {
 		return
 	}
-	if _, ok := xTransport.loadCachedIP(cachePrefix+"#"+host, true); ok {
+	cachedIP, expired := xTransport.loadCachedIP(cachePrefix+"#"+host)
+	if cachedIP != nil && !expired {
 		return
 	}
 	var foundIP net.IP
@@ -282,11 +287,19 @@ func (xTransport *XTransport) resolveHost(host string, cachePrefix string) (err 
 			}
 		}
 	}
+	if ttl < MinRresolverIPTTL {
+		ttl = MinRresolverIPTTL
+	}
 	if err != nil {
-		return
+		if cachedIP != nil {
+			foundIP = cachedIP
+			ttl = ExpiredCachedIPGraceTTL
+		} else {
+			return
+		}
 	}
 	xTransport.saveCachedIP(cachePrefix+"#"+host, foundIP, ttl)
-	dlog.Debugf("[%s] IP address [%s] added to the cache, valid until %v", host, foundIP, ttl)
+	dlog.Debugf("[%s] IP address [%s] added to the cache, valid for %v", host, foundIP, ttl)
 	return
 }
 
@@ -317,7 +330,7 @@ func (xTransport *XTransport) Fetch(method string, url *url.URL, accept string, 
 	if xTransport.proxyDialer == nil && strings.HasSuffix(host, ".onion") {
 		return nil, 0, errors.New("Onion service is not reachable without Tor")
 	}
-	if err := xTransport.resolveHost(host, cachePrefix); err != nil {
+	if err := xTransport.resolveWithCache(host, cachePrefix); err != nil {
 		return nil, 0, err
 	}
 	req := &http.Request{

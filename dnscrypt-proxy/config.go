@@ -272,7 +272,7 @@ func ConfigLoad(proxy *Proxy, flags *ConfigFlags) error {
 	proxy.xTransport.tlsCipherSuite = config.TLSCipherSuite
 	proxy.xTransport.mainProto = proxy.mainProto
 	if len(config.FallbackResolver) > 0 {
-		if err := CheckResolver(config.FallbackResolver); err != nil {
+		if err := isIPAndPort(config.FallbackResolver); err != nil {
 			dlog.Fatalf("fallback_resolver [%v]", err)
 		}
 		proxy.xTransport.ignoreSystemDNS = config.IgnoreSystemDNS
@@ -325,7 +325,7 @@ func ConfigLoad(proxy *Proxy, flags *ConfigFlags) error {
 	if config.ForceTCP {
 		proxy.mainProto = "tcp"
 	}
-	proxy.certRefreshDelay = time.Duration(config.CertRefreshDelay) * time.Minute
+	proxy.certRefreshDelay = time.Duration(Max(60, config.CertRefreshDelay)) * time.Minute
 	proxy.certRefreshDelayAfterFailure = time.Duration(10 * time.Second)
 	proxy.certIgnoreTimestamp = config.CertIgnoreTimestamp
 	proxy.ephemeralKeys = config.EphemeralKeys
@@ -625,12 +625,12 @@ func (config *Config) loadSource(proxy *Proxy, requiredProps stamps.ServerInform
 	if cfgSource.RefreshDelay <= 0 {
 		cfgSource.RefreshDelay = 72
 	}
-	source, sourceUrlsToPrefetch, err := NewSource(proxy.xTransport, cfgSource.URLs, cfgSource.MinisignKeyStr, cfgSource.CacheFile, cfgSource.FormatStr, time.Duration(cfgSource.RefreshDelay)*time.Hour)
-	proxy.urlsToPrefetch = append(proxy.urlsToPrefetch, sourceUrlsToPrefetch...)
+	source, err := NewSource(cfgSourceName, proxy.xTransport, cfgSource.URLs, cfgSource.MinisignKeyStr, cfgSource.CacheFile, cfgSource.FormatStr, time.Duration(cfgSource.RefreshDelay)*time.Hour)
 	if err != nil {
 		dlog.Criticalf("Unable to retrieve source [%s]: [%s]", cfgSourceName, err)
 		return err
 	}
+	proxy.sources = append(proxy.sources, source)
 	registeredServers, err := source.Parse(cfgSource.Prefix)
 	if err != nil {
 		if len(registeredServers) == 0 {
@@ -696,14 +696,14 @@ func cdLocal(ex string) {
 	os.Chdir(filepath.Dir(ex))
 }
 
-func CheckResolver(resolver string) error {
-	host, port := ExtractHostAndPort(resolver, -1)
+func isIPAndPort(addrStr string) error {
+	host, port := ExtractHostAndPort(addrStr, -1)
 	if ip := ParseIP(host); ip == nil {
-		return fmt.Errorf("Host does not parse as IP '%s'", resolver)
+		return fmt.Errorf("Host does not parse as IP '%s'", addrStr)
 	} else if port == -1 {
-		return fmt.Errorf("Port missing '%s'", resolver)
+		return fmt.Errorf("Port missing '%s'", addrStr)
 	} else if _, err := strconv.ParseUint(strconv.Itoa(port), 10, 16); err != nil {
-		return fmt.Errorf("Port does not parse '%s' [%v]", resolver, err)
+		return fmt.Errorf("Port does not parse '%s' [%v]", addrStr, err)
 	}
 	return nil
 }
