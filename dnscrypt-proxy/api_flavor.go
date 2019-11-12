@@ -158,11 +158,9 @@ func (xTransport *XTransport) SetupXTransportCloak(useIPv4 bool, useIPv6 bool, f
 	xTransport.rebuildTransport()
 }
 
-func PrefetchSourceURLCloak(xTransport *XTransport, url string, cacheFile string) error {
-	source := &Source{name: url, cacheFile: cacheFile, cacheTTL: DefaultPrefetchDelay, prefetchDelay: DefaultPrefetchDelay, format: SourceFormatV2}
-	source.parseURLs([]string{url})
-	PrefetchSources(xTransport, []*Source{source})
-	return nil
+func PrefetchSourceURLCloak(xTransport *XTransport, url string, cacheFile string, minisignKeyStr string) error {
+	_, err := NewSource(url, xTransport, []string{url}, minisignKeyStr, cacheFile, "v2", DefaultPrefetchDelay)
+	return err
 }
 
 func (proxy *Proxy) RefreshServersInfo() int {
