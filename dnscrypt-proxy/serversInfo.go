@@ -132,10 +132,7 @@ func (serversInfo *ServersInfo) refreshServer(proxy *Proxy, name string, stamp s
 		serversInfo.inner = append(serversInfo.inner, &newServer)
 		serversInfo.Unlock()
 		//serversInfo.registeredServers = append(serversInfo.registeredServers, RegisteredServer{name: name, stamp: stamp})
-		err = serversInfo.registerServer(name, stamp)
-		if err != nil {
-			return err
-		}
+		serversInfo.registerServer(name, stamp)
 	} else {
 		serversInfo.Unlock()
 	}

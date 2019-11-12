@@ -17,7 +17,7 @@ import (
 	"github.com/miekg/dns"
 	"golang.org/x/crypto/curve25519"
 
-    "github.com/korovkin/limiter"
+	"github.com/korovkin/limiter"
 )
 
 type Proxy struct {
@@ -257,7 +257,7 @@ func (proxy *Proxy) udpListener(clientPc *net.UDPConn) {
 			clientAddr := a.clientAddr
 			packet := a.buffer[:a.length]
 			proxy.workerPool.Execute(func() {
-                start := time.Now()
+				start := time.Now()
 				if !proxy.clientsCountInc() {
 					dlog.Warnf("Too many connections (max=%d)", proxy.maxClients)
 					return
@@ -301,7 +301,7 @@ func (proxy *Proxy) tcpListener(acceptPc *net.TCPListener) {
 	c := make(chan accepted, 1)
 
 	for {
-        go func() {
+		go func() {
 			clientPc, err := acceptPc.Accept()
 			c <- accepted{clientPc, err}
 		}()
@@ -315,7 +315,7 @@ func (proxy *Proxy) tcpListener(acceptPc *net.TCPListener) {
 			}
 			clientPc := a.clientPc
 			proxy.workerPool.Execute(func() {
-                start := time.Now()
+				start := time.Now()
 				defer clientPc.Close()
 				if !proxy.clientsCountInc() {
 					dlog.Warnf("Too many connections (max=%d)", proxy.maxClients)
@@ -468,15 +468,6 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 		}
 	}
 
-    serverName := "-"
-    if serverInfo != nil {
-        serverName = serverInfo.Name
-    }
-    query, _ = pluginsState.ApplyQueryPlugins(&proxy.pluginsGlobals, query, serverName)
-    if len(query) < MinDNSPacketSize || len(query) > MaxDNSPacketSize {
-        return nil
-    }
-
 	if pluginsState.action != PluginsActionForward {
 		if pluginsState.synthResponse != nil {
 			response, err = pluginsState.synthResponse.PackBuffer(response)
@@ -611,13 +602,13 @@ func (proxy *Proxy) processIncomingQuery(serverInfo *ServerInfo, clientProto str
 		clientPc.Write(response)
 	}
 	pluginsState.ApplyLoggingPlugins(&proxy.pluginsGlobals)
-    return nil
+	return nil
 }
 
 func NewProxy() *Proxy {
 	return &Proxy{
-        serversInfo: NewServersInfo(),
-        readyFired:    false,
-        ReadyCallback: make(chan bool),
+		serversInfo:   NewServersInfo(),
+		readyFired:    false,
+		ReadyCallback: make(chan bool),
 	}
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"net"
-	"time"
 
 	clocksmith "github.com/jedisct1/go-clocksmith"
 	"github.com/miekg/dns"
@@ -148,7 +147,7 @@ func (proxy *Proxy) RefusedResponseFromQuery(packet []byte) (*dns.Msg, error) {
 		return nil, err
 	}
 
-	return RefusedResponseFromMessage(&msg, proxy.pluginsGlobals.refusedCodeInResponses, proxy.pluginsGlobals.respondWithIPv4, proxy.pluginsGlobals.respondWithIPv6, proxy.cacheMinTTL)
+	return RefusedResponseFromMessage(&msg, proxy.pluginsGlobals.refusedCodeInResponses, proxy.pluginsGlobals.respondWithIPv4, proxy.pluginsGlobals.respondWithIPv6, proxy.cacheMinTTL), nil
 }
 
 func (xTransport *XTransport) SetupXTransportCloak(useIPv4 bool, useIPv6 bool, fallbackResolver string, ignoreSystemDNS bool) {
@@ -160,8 +159,10 @@ func (xTransport *XTransport) SetupXTransportCloak(useIPv4 bool, useIPv6 bool, f
 }
 
 func PrefetchSourceURLCloak(xTransport *XTransport, url string, cacheFile string) error {
-	u := URLToPrefetch{url: url, cacheFile: cacheFile, when: time.Now()}
-	return PrefetchSourceURL(xTransport, &u)
+	source := &Source{name: url, cacheFile: cacheFile, cacheTTL: DefaultPrefetchDelay, prefetchDelay: DefaultPrefetchDelay, format: SourceFormatV2}
+	source.parseURLs([]string{url})
+	PrefetchSources(xTransport, []*Source{source})
+	return nil
 }
 
 func (proxy *Proxy) RefreshServersInfo() int {
