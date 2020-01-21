@@ -122,14 +122,7 @@ func (plugin *PluginBlockIP) Eval(pluginsState *PluginsState, msg *dns.Msg) erro
 		pluginsState.action = PluginsActionReject
 		pluginsState.returnCode = PluginsReturnCodeReject
 		if plugin.logger != nil {
-			questions := msg.Question
-			if len(questions) != 1 {
-				return nil
-			}
-			qName := strings.ToLower(StripTrailingDot(questions[0].Name))
-			if len(qName) < 2 {
-				return nil
-			}
+			qName := pluginsState.qName
 			var clientIPStr string
 			if pluginsState.clientProto == "udp" {
 				clientIPStr = (*pluginsState.clientAddr).(*net.UDPAddr).IP.String()
@@ -151,7 +144,7 @@ func (plugin *PluginBlockIP) Eval(pluginsState *PluginsState, msg *dns.Msg) erro
 			if plugin.logger == nil {
 				return errors.New("Log file not initialized")
 			}
-			plugin.logger.Write([]byte(line))
+			_, _ = plugin.logger.Write([]byte(line))
 		}
 	}
 	return nil

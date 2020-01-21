@@ -1,3 +1,58 @@
+* Version 2.0.36
+ - New option: `block_undelegated`. When enabled, `dnscrypt-proxy` will
+directly respond to queries for locally-served zones (https://sk.tl/2QqB971U)
+and nonexistent zones that should have been kept local, but are frequently
+leaked. This reduces latency and improves privacy.
+ - Conformance: the `DO` bit is now set in synthetic responses if it was
+set in a question, and the `AD` bit is cleared.
+ - The `miegkg/dns` module was updated to version 1.1.26, that fixes a
+security issue affecting non-encrypted/non-authenticated DNS traffic. In
+`dnscrypt-proxy`, this only affects the forwarding feature.
+
+* Version 2.0.35
+ - New option: `block_unqualified` to block `A`/`AAAA` queries with
+unqualified host names. These will very rarely get an answer from upstream
+resolvers, but can leak private information to these, as well as to root
+servers.
+ - When a `CNAME` pointer is blocked, the original query name is now logged
+along with the pointer. This makes it easier to know what the original
+query name, so it can be whitelisted, or what the pointer was, so it
+can be removed from the blacklist.
+
+* Version 2.0.34
+ - Blacklisted names are now also blocked if they appear in `CNAME`
+pointers.
+ - `dnscrypt-proxy` can now act as a local DoH *server*. Firefox can
+be configured to use it, so that ESNI can be enabled without bypassing
+your DNS proxy.
+
+* Version 2.0.33
+ - Fixes an issue that caused some valid queries to return `PARSE_ERROR`.
+
+* Version 2.0.32
+ - On certificate errors, the server name is now logged instead of the
+provider name, which is generally more useful.
+ - IP addresses for DoH servers that require DNS lookups are now cached
+for at least 12 hours.
+ - `ignore_system_dns` is now set to `true` by default.
+ - A workaround for a bug in Cisco servers has been implemented.
+ - A corrupted or incomplete resolvers list is now ignored, keeping the
+last good known cached list until the next update. In addition, logging was
+improved and unit tests were also added. Awesome contribution from William
+Elwood, thanks!
+ - On Windows, the network probe immediately returned instead of blocking
+if `netprobe_timeout` was set to `-1`. This has been fixed.
+ - Expired cached IP addresses now have a grace period, to avoid breaking the
+service if they temporarily can't be refreshed.
+ - On Windows, the service now returns immediately, solving a long-standing
+issue when initialization took more than 30 seconds ("The service did not
+respond to the start or control request in a timely fashion"). Fantastic
+work by Alison Winters, thanks!
+ - The `SERVER_ERROR` error code has been split into two new error codes:
+`NETWORK_ERROR` (self-explanatory) and `SERVFAIL` (a response was returned,
+but it includes a `SERVFAIL` error code).
+ - Responses are now always compressed.
+
 * Version 2.0.31
  - This version fixes two regressions introduced in version 2.0.29:
 DoH server couldn't be reached over IPv6 any more, and the proxy

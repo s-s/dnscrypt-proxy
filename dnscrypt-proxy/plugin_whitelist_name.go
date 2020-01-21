@@ -82,11 +82,7 @@ func (plugin *PluginWhitelistName) Reload() error {
 }
 
 func (plugin *PluginWhitelistName) Eval(pluginsState *PluginsState, msg *dns.Msg) error {
-	questions := msg.Question
-	if len(questions) != 1 {
-		return nil
-	}
-	qName := strings.ToLower(StripTrailingDot(questions[0].Name))
+	qName := pluginsState.qName
 	whitelist, reason, xweeklyRanges := plugin.patternMatcher.Eval(qName)
 	var weeklyRanges *WeeklyRanges
 	if xweeklyRanges != nil {
@@ -124,7 +120,7 @@ func (plugin *PluginWhitelistName) Eval(pluginsState *PluginsState, msg *dns.Msg
 			if plugin.logger == nil {
 				return errors.New("Log file not initialized")
 			}
-			plugin.logger.Write([]byte(line))
+			_, _ = plugin.logger.Write([]byte(line))
 		}
 	}
 	return nil
