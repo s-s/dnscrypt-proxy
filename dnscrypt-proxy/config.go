@@ -27,28 +27,28 @@ const (
 )
 
 type Config struct {
-	LogLevel                 int            `toml:"log_level,omitempty" json:"log_level,omitempty"`
-	LogFile                  *string        `toml:"log_file,omitempty" json:"log_file,omitempty"`
-	UseSyslog                bool           `toml:"use_syslog,omitempty" json:"use_syslog,omitempty"`
-	ServerNames              []string       `toml:"server_names,omitempty" json:"server_names,omitempty"`
-	DisabledServerNames      []string       `toml:"disabled_server_names,omitempty" json:"disabled_server_names,omitempty"`
-	ListenAddresses          []string       `toml:"listen_addresses,omitempty" json:"listen_addresses,omitempty"`
-	LocalDoH                 LocalDoHConfig `toml:"local_doh,omitempty" json:"local_doh,omitempty"`
-	Daemonize                bool           `toml:"-" json:"-"`
-	UserName                 string `toml:"user_name,omitempty" json:"user_name,omitempty"`
-	ForceTCP                 bool   `toml:"force_tcp,omitempty" json:"force_tcp,omitempty"`
-	Timeout                  int    `toml:"timeout,omitempty" json:"timeout,omitempty"`
-	KeepAlive                int    `toml:"keepalive,omitempty" json:"keepalive,omitempty"`
-	Proxy                    string `toml:"proxy,omitempty" json:"proxy,omitempty"`
-	CertRefreshDelay         int    `toml:"cert_refresh_delay,omitempty" json:"cert_refresh_delay,omitempty"`
-	CertIgnoreTimestamp      bool   `toml:"cert_ignore_timestamp,omitempty" json:"cert_ignore_timestamp,omitempty"`
-	EphemeralKeys            bool   `toml:"dnscrypt_ephemeral_keys,omitempty" json:"dnscrypt_ephemeral_keys,omitempty"`
-	LBStrategy               string `toml:"lb_strategy,omitempty" json:"lb_strategy,omitempty"`
-	LBEstimator              bool   `toml:"lb_estimator,omitempty" json:"lb_estimator,omitempty"`
-	BlockIPv6                bool   `toml:"block_ipv6,omitempty" json:"block_ipv6,omitempty"`
-	BlockUnqualified         bool   `toml:"block_unqualified,omitempty" json:"block_unqualified,omitempty"`
-	BlockUndelegated         bool   `toml:"block_undelegated,omitempty" json:"block_undelegated,omitempty"`
-	Cache                    bool   `toml:"cache,omitempty" json:"cache,omitempty"`
+	LogLevel                 int                         `toml:"log_level,omitempty" json:"log_level,omitempty"`
+	LogFile                  *string                     `toml:"log_file,omitempty" json:"log_file,omitempty"`
+	UseSyslog                bool                        `toml:"use_syslog,omitempty" json:"use_syslog,omitempty"`
+	ServerNames              []string                    `toml:"server_names,omitempty" json:"server_names,omitempty"`
+	DisabledServerNames      []string                    `toml:"disabled_server_names,omitempty" json:"disabled_server_names,omitempty"`
+	ListenAddresses          []string                    `toml:"listen_addresses,omitempty" json:"listen_addresses,omitempty"`
+	LocalDoH                 LocalDoHConfig              `toml:"local_doh,omitempty" json:"local_doh,omitempty"`
+	Daemonize                bool                        `toml:"-" json:"-"`
+	UserName                 string                      `toml:"user_name,omitempty" json:"user_name,omitempty"`
+	ForceTCP                 bool                        `toml:"force_tcp,omitempty" json:"force_tcp,omitempty"`
+	Timeout                  int                         `toml:"timeout,omitempty" json:"timeout,omitempty"`
+	KeepAlive                int                         `toml:"keepalive,omitempty" json:"keepalive,omitempty"`
+	Proxy                    string                      `toml:"proxy,omitempty" json:"proxy,omitempty"`
+	CertRefreshDelay         int                         `toml:"cert_refresh_delay,omitempty" json:"cert_refresh_delay,omitempty"`
+	CertIgnoreTimestamp      bool                        `toml:"cert_ignore_timestamp,omitempty" json:"cert_ignore_timestamp,omitempty"`
+	EphemeralKeys            bool                        `toml:"dnscrypt_ephemeral_keys,omitempty" json:"dnscrypt_ephemeral_keys,omitempty"`
+	LBStrategy               string                      `toml:"lb_strategy,omitempty" json:"lb_strategy,omitempty"`
+	LBEstimator              bool                        `toml:"lb_estimator,omitempty" json:"lb_estimator,omitempty"`
+	BlockIPv6                bool                        `toml:"block_ipv6,omitempty" json:"block_ipv6,omitempty"`
+	BlockUnqualified         bool                        `toml:"block_unqualified,omitempty" json:"block_unqualified,omitempty"`
+	BlockUndelegated         bool                        `toml:"block_undelegated,omitempty" json:"block_undelegated,omitempty"`
+	Cache                    bool                        `toml:"cache,omitempty" json:"cache,omitempty"`
 	CacheSize                int                         `toml:"cache_size,omitempty" json:"cache_size,omitempty"`
 	CacheNegTTL              uint32                      `toml:"cache_neg_ttl,omitempty" json:"cache_neg_ttl,omitempty"`
 	CacheNegMinTTL           uint32                      `toml:"cache_neg_min_ttl,omitempty" json:"cache_neg_min_ttl,omitempty"`
@@ -86,9 +86,9 @@ type Config struct {
 	TLSCipherSuite           []uint16                    `toml:"tls_cipher_suite,omitempty" json:"tls_cipher_suite,omitempty"`
 	NetprobeAddress          string                      `toml:"netprobe_address,omitempty" json:"netprobe_address,omitempty"`
 	NetprobeTimeout          int                         `toml:"netprobe_timeout,omitempty" json:"netprobe_timeout,omitempty"`
-    MaxWorkers               int                         `toml:"max_workers,omitempty" json:"max_workers,omitempty"`
-    RetryCount               int                         `toml:"retry_count,omitempty" json:"retry_count,omitempty"`
-    IOSMode                  bool                        `toml:"ios_mode,omitempty" json:"ios_mode,omitempty"`
+	MaxWorkers               int                         `toml:"max_workers,omitempty" json:"max_workers,omitempty"`
+	RetryCount               int                         `toml:"retry_count,omitempty" json:"retry_count,omitempty"`
+	IOSMode                  bool                        `toml:"ios_mode,omitempty" json:"ios_mode,omitempty"`
 	OfflineMode              bool                        `toml:"offline_mode,omitempty" json:"offline_mode,omitempty"`
 	HTTPProxyURL             string                      `toml:"http_proxy,omitempty" json:"http_proxy,omitempty"`
 	RefusedCodeInResponses   bool                        `toml:"refused_code_in_responses,omitempty" json:"refused_code_in_responses,omitempty"`

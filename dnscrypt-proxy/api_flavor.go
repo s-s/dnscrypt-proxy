@@ -62,6 +62,18 @@ func (proxy *Proxy) GetCache() bool {
 	return proxy.cache
 }
 
+func (proxy *Proxy) GetQueryMeta() []string {
+	return proxy.queryMeta
+}
+
+func (proxy *Proxy) GetPluginBlockUnqualified() bool {
+	return proxy.pluginBlockUnqualified
+}
+
+func (proxy *Proxy) GetPluginBlockUndelegated() bool {
+	return proxy.pluginBlockUndelegated
+}
+
 func (proxy *Proxy) GetBlockNameFile() string {
 	return proxy.blockNameFile
 }
@@ -141,6 +153,10 @@ func (pluginsState *PluginsState) SetReturnCode(code PluginsReturnCode) {
 	pluginsState.returnCode = code
 }
 
+func (pluginsState *PluginsState) GetQName() string {
+	return pluginsState.qName
+}
+
 func (proxy *Proxy) RefusedResponseFromQuery(packet []byte) (*dns.Msg, error) {
 	msg := dns.Msg{}
 	if err := msg.Unpack(packet); err != nil {
@@ -153,7 +169,7 @@ func (proxy *Proxy) RefusedResponseFromQuery(packet []byte) (*dns.Msg, error) {
 func (xTransport *XTransport) SetupXTransportCloak(useIPv4 bool, useIPv6 bool, fallbackResolver string, ignoreSystemDNS bool) {
 	xTransport.useIPv4 = useIPv4
 	xTransport.useIPv6 = useIPv6
-	xTransport.fallbackResolver = fallbackResolver
+	xTransport.fallbackResolvers = []string{fallbackResolver}
 	xTransport.ignoreSystemDNS = ignoreSystemDNS
 	xTransport.rebuildTransport()
 }

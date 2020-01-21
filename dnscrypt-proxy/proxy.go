@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -81,6 +82,16 @@ type Proxy struct {
 	routes                        *map[string][]string
 	serversWithBrokenQueryPadding []string
 	showCerts                     bool
+
+	ReadyCallback chan bool
+	readyFired    bool
+
+	iosMode       bool
+	retryCount    int
+	maxWorkers    int
+	workerPool    *limiter.ConcurrencyLimiter
+	quitListeners chan bool
+	wgQuit        sync.WaitGroup
 }
 
 func (proxy *Proxy) addDNSListener(listenAddrStr string) {
@@ -367,7 +378,7 @@ func (proxy *Proxy) tcpListener(acceptPc *net.TCPListener) {
 					return
 				}
 				defer proxy.clientsCountDec()
-				if err = clientPc.SetDeadline(time.Now().Add(proxy.timeout)); err != nil {
+				if err := clientPc.SetDeadline(time.Now().Add(proxy.timeout)); err != nil {
 					return
 				}
 				packet, err := ReadPrefixed(&clientPc)
