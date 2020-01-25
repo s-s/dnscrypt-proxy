@@ -112,7 +112,6 @@ func (proxy *Proxy) addDNSListener(listenAddrStr string) {
 		if err := proxy.tcpListenerFromAddr(listenTCPAddr); err != nil {
 			dlog.Fatal(err)
 		}
-		proxy.wgQuit.Add(2)
 		return
 	}
 
@@ -174,7 +173,6 @@ func (proxy *Proxy) addLocalDoHListener(listenAddrStr string) {
 		if err := proxy.localDoHListenerFromAddr(listenTCPAddr); err != nil {
 			dlog.Fatal(err)
 		}
-		proxy.wgQuit.Add(2)
 		return
 	}
 
@@ -283,6 +281,7 @@ func (proxy *Proxy) StartProxy() {
 }
 
 func (proxy *Proxy) udpListener(clientPc *net.UDPConn) {
+	proxy.wgQuit.Add(1)
 	defer proxy.wgQuit.Done()
 	defer clientPc.Close()
 
@@ -346,6 +345,7 @@ func (proxy *Proxy) udpListenerFromAddr(listenAddr *net.UDPAddr) error {
 }
 
 func (proxy *Proxy) tcpListener(acceptPc *net.TCPListener) {
+	proxy.wgQuit.Add(1)
 	defer proxy.wgQuit.Done()
 	defer acceptPc.Close()
 
