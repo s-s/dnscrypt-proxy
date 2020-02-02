@@ -53,8 +53,8 @@ func (handler localDoHHandler) ServeHTTP(writer http.ResponseWriter, request *ht
 		writer.WriteHeader(400)
 		return
 	}
-	response := proxy.processIncomingQuery(proxy.serversInfo.getOne(), "local_doh", proxy.mainProto, packet, &xClientAddr, nil, start)
-	if len(response) == 0 {
+	response, err := proxy.processIncomingQuery(proxy.serversInfo.getOne(), "local_doh", proxy.mainProto, packet, &xClientAddr, nil, start, 0)
+	if err != nil || len(response) == 0 {
 		writer.WriteHeader(500)
 		return
 	}
