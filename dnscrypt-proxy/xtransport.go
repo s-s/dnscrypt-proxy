@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"io"
 	"io/ioutil"
 	"math/rand"
 	"net"
@@ -58,6 +59,7 @@ type XTransport struct {
 	tlsCipherSuite           []uint16
 	proxyDialer              *netproxy.Dialer
 	httpProxyFunction        func(*http.Request) (*url.URL, error)
+	tlsClientCreds           DOHClientCreds
 }
 
 type cachePrefixContextKey string
@@ -163,10 +165,17 @@ func (xTransport *XTransport) rebuildTransport() {
 	if xTransport.httpProxyFunction != nil {
 		transport.Proxy = xTransport.httpProxyFunction
 	}
-	if xTransport.tlsDisableSessionTickets || xTransport.tlsCipherSuite != nil {
-		tlsClientConfig := tls.Config{
-			SessionTicketsDisabled: xTransport.tlsDisableSessionTickets,
+	tlsClientConfig := tls.Config{}
+	clientCreds := xTransport.tlsClientCreds
+	if (clientCreds != DOHClientCreds{}) {
+		cert, err := tls.LoadX509KeyPair(clientCreds.clientCert, clientCreds.clientKey)
+		if err != nil {
+			dlog.Fatalf("Unable to use certificate [%v] (key: [%v]): %v", clientCreds.clientCert, clientCreds.clientKey, err)
 		}
+		tlsClientConfig.Certificates = []tls.Certificate{cert}
+	}
+	if xTransport.tlsDisableSessionTickets || xTransport.tlsCipherSuite != nil {
+		tlsClientConfig.SessionTicketsDisabled = xTransport.tlsDisableSessionTickets
 		if !xTransport.tlsDisableSessionTickets {
 			tlsClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(10)
 		}
@@ -174,8 +183,8 @@ func (xTransport *XTransport) rebuildTransport() {
 			tlsClientConfig.PreferServerCipherSuites = false
 			tlsClientConfig.CipherSuites = xTransport.tlsCipherSuite
 		}
-		transport.TLSClientConfig = &tlsClientConfig
 	}
+	transport.TLSClientConfig = &tlsClientConfig
 	http2.ConfigureTransport(transport)
 	xTransport.transport = transport
 }
@@ -324,7 +333,7 @@ func (xTransport *XTransport) resolveAndUpdateCache(host string, cachePrefix str
 	return nil
 }
 
-func (xTransport *XTransport) Fetch(method string, url *url.URL, accept string, contentType string, body *[]byte, timeout time.Duration, cachePrefix string) (*http.Response, time.Duration, error) {
+func (xTransport *XTransport) Fetch(method string, url *url.URL, accept string, contentType string, body *[]byte, timeout time.Duration, cachePrefix string) ([]byte, *tls.ConnectionState, time.Duration, error) {
 	if timeout <= 0 {
 		timeout = xTransport.timeout
 	}
@@ -346,11 +355,11 @@ func (xTransport *XTransport) Fetch(method string, url *url.URL, accept string, 
 	}
 	host, _ := ExtractHostAndPort(url.Host, 0)
 	if xTransport.proxyDialer == nil && strings.HasSuffix(host, ".onion") {
-		return nil, 0, errors.New("Onion service is not reachable without Tor")
+		return nil, nil, 0, errors.New("Onion service is not reachable without Tor")
 	}
 	if err := xTransport.resolveAndUpdateCache(host, cachePrefix); err != nil {
 		dlog.Errorf("Unable to resolve [%v] - Make sure that the system resolver works, or that `fallback_resolver` has been set to a resolver that can be reached", host)
-		return nil, 0, err
+		return nil, nil, 0, err
 	}
 	req := &http.Request{
 		Method: method,
@@ -387,23 +396,29 @@ func (xTransport *XTransport) Fetch(method string, url *url.URL, accept string, 
 			xTransport.tlsCipherSuite = nil
 			xTransport.rebuildTransport()
 		}
+		return nil, nil, 0, err
 	}
-	return resp, rtt, err
+	tls := resp.TLS
+	bin, err := ioutil.ReadAll(io.LimitReader(resp.Body, MaxHTTPBodyLength))
+	if err != nil {
+		return nil, tls, 0, err
+	}
+	resp.Body.Close()
+	return bin, tls, rtt, err
 }
 
-func (xTransport *XTransport) Get(url *url.URL, accept string, timeout time.Duration, cachePrefix string) (*http.Response, time.Duration, error) {
+func (xTransport *XTransport) Get(url *url.URL, accept string, timeout time.Duration, cachePrefix string) ([]byte, *tls.ConnectionState, time.Duration, error) {
 	return xTransport.Fetch("GET", url, accept, "", nil, timeout, cachePrefix)
 }
 
-func (xTransport *XTransport) Post(url *url.URL, accept string, contentType string, body *[]byte, timeout time.Duration, cachePrefix string) (*http.Response, time.Duration, error) {
+func (xTransport *XTransport) Post(url *url.URL, accept string, contentType string, body *[]byte, timeout time.Duration, cachePrefix string) ([]byte, *tls.ConnectionState, time.Duration, error) {
 	return xTransport.Fetch("POST", url, accept, contentType, body, timeout, cachePrefix)
 }
 
-func (xTransport *XTransport) DoHQuery(useGet bool, url *url.URL, body []byte, timeout time.Duration, cachePrefix string) (*http.Response, time.Duration, error) {
+func (xTransport *XTransport) DoHQuery(useGet bool, url *url.URL, body []byte, timeout time.Duration, cachePrefix string) ([]byte, *tls.ConnectionState, time.Duration, error) {
 	dataType := "application/dns-message"
 	if useGet {
 		qs := url.Query()
-		qs.Add("ct", "")
 		encBody := base64.RawURLEncoding.EncodeToString(body)
 		qs.Add("dns", encBody)
 		url2 := *url

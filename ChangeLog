@@ -1,3 +1,63 @@
+* Version 2.0.42
+ - The current versions of the `dnsdist` load balancer (presumably used
+by quad9, cleanbrowsing, qualityology, freetsa.org, ffmuc.net,
+opennic-bongobow, sth-dnscrypt-se, ams-dnscrypt-nl and more)
+is preventing queries over 1500 bytes from being received over UDP.
+Temporary workarounds have been introduced to improve reliability
+with these resolvers for regular DNSCrypt. Unfortunately, anonymized
+DNS cannot be reliable until the issue is fixed server-side. `dnsdist`
+authors are aware of it and are working on a fix.
+ - New option in the `[anonymized_dns]` section: `skip_incompatible`,
+to ignore resolvers incompatible with Anonymized DNS instead of
+using them without a relay.
+ - The server latency benchmark is faster while being able to perform
+more retries if necessary.
+ - Continuous integration has been moved to GitHub Actions.
+
+* Version 2.0.41
+ - Precompiled ARM binaries are compatible with ARMv5 CPUs. The
+default arm builds were not compatible with older CPUs when compiled
+with Go 1.14. mips64 binaries are explicitly compiled with `softfloat`
+to improve compatibility.
+ - Quad9 seems to be only blocking fragmented queries over UDP for
+some networks. They have been removed from the default list of broken
+resolvers; runtime detection of support for fragments should now do
+the job.
+ - Runtime detection of support for fragments was actually enabled.
+
+* Version 2.0.40
+ - Servers blocking fragmented queries are now automatically detected.
+ - The server name is now only present in query logs when an actual
+upstream servers was required to resolve a query.
+ - TLS client authentication has been added for DoH.
+ - The Firefox plugin is now skipped for connections coming from the
+local DoH server.
+ - DoH RTT computation is now more accurate, especially when CDNs are
+in the middle.
+ - The forwarding plugin is now more reliable, and handles retries over
+ TCP.
+
+* Version 2.0.39
+ - The Firefox Local DoH service didn't properly work in version 2.0.38;
+this has been fixed. Thanks to Simon Brand for the report!
+
+* Version 2.0.38
+ - Entries from lists (forwarding, blacklists, whitelists) now support
+inline comments.
+ - Reliability improvement: queries over UDP are retried after a timeout
+instead of solely relying on the client.
+ - Reliability improvement: during temporary network outages, cached records
+are now served even if they are stale.
+ - Bug fix: SOCKS proxies and DNS relays can be combined.
+ - New feature: multiple fallback resolvers are now supported (see the
+new `fallback_resolvers` option. Note that `fallback_resolver` is
+still supported for backward compatibility).
+ - Windows: the service can be installed with a configuration file
+stored separately from the application.
+ - Security (affecting DoH): precompiled binaries of dnscrypt-proxy 2.0.37 are
+built using Go 1.13.7 that fixes a TLS certificate parsing issue present in
+previous versions of the compiler.
+
 * Version 2.0.36
  - New option: `block_undelegated`. When enabled, `dnscrypt-proxy` will
 directly respond to queries for locally-served zones (https://sk.tl/2QqB971U)

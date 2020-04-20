@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	AppVersion            = "2.0.36"
+	AppVersion            = "2.0.42"
 	DefaultConfigFileName = "dnscrypt-proxy.toml"
 )
 
@@ -102,7 +102,7 @@ func main() {
 		return
 	}
 	if svc != nil {
-		if err = svc.Run(); err != nil {
+		if err := svc.Run(); err != nil {
 			dlog.Fatal(err)
 		}
 	} else {
