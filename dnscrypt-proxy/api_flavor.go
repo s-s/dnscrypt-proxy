@@ -131,9 +131,6 @@ func (pluginsState *PluginsState) GetSessionDataKey(key string) interface{} {
 }
 
 func (pluginsState *PluginsState) SetSessionDataKey(key string, val interface{}) {
-	if pluginsState.sessionData == nil {
-		pluginsState.sessionData = make(map[string]interface{})
-	}
 	pluginsState.sessionData[key] = val
 }
 
