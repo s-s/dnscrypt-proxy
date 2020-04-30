@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/facebookgo/pidfile"
 	"github.com/jedisct1/dlog"
 	stamps "github.com/jedisct1/go-dnsstamps"
 	netproxy "golang.org/x/net/proxy"
@@ -95,7 +96,7 @@ type Config struct {
 	BlockedQueryResponse     string                      `toml:"blocked_query_response,omitempty" json:"blocked_query_response,omitempty"`
 	QueryMeta                []string                    `toml:"query_meta,omitempty" json:"query_meta,omitempty"`
 	AnonymizedDNS            AnonymizedDNSConfig         `toml:"anonymized_dns,omitempty" json:"anonymized_dns,omitempty"`
-	TLSClientAuth            TLSClientAuthConfig         `toml:"tls_client_auth,omitempty" json:"tls_client_auth,omitempty"`
+	DoHClientX509Auth        DoHClientX509AuthConfig     `toml:"doh_client_x509_auth,omitempty" json:"doh_client_x509_auth,omitempty"`
 }
 
 func newConfig() Config {
@@ -233,7 +234,7 @@ type TLSClientAuthCredsConfig struct {
 	ClientKey  string `toml:"client_key"`
 }
 
-type TLSClientAuthConfig struct {
+type DoHClientX509AuthConfig struct {
 	Creds []TLSClientAuthCredsConfig `toml:"creds"`
 }
 
@@ -511,7 +512,7 @@ func ConfigLoad(proxy *Proxy, flags *ConfigFlags) error {
 	}
 	proxy.skipAnonIncompatbibleResolvers = config.AnonymizedDNS.SkipIncompatible
 
-	configClientCreds := config.TLSClientAuth.Creds
+	configClientCreds := config.DoHClientX509Auth.Creds
 	creds := make(map[string]DOHClientCreds)
 	for _, configClientCred := range configClientCreds {
 		credFiles := DOHClientCreds{
@@ -555,9 +556,28 @@ func ConfigLoad(proxy *Proxy, flags *ConfigFlags) error {
 	if proxy.showCerts {
 		proxy.listenAddresses = nil
 	}
-	dlog.Noticef("dnscrypt-proxy %s", AppVersion)
+	if !proxy.child {
+		dlog.Noticef("dnscrypt-proxy %s", AppVersion)
+	}
 	if err := NetProbe(netprobeAddress, netprobeTimeout); err != nil {
 		return err
+	}
+
+	proxy.quitListeners = make(chan bool)
+	for _, listenAddrStr := range proxy.listenAddresses {
+		proxy.addDNSListener(listenAddrStr)
+	}
+	for _, listenAddrStr := range proxy.localDoHListenAddresses {
+		proxy.addLocalDoHListener(listenAddrStr)
+	}
+	if err := proxy.addSystemDListeners(); err != nil {
+		dlog.Fatal(err)
+	}
+	_ = pidfile.Write()
+	// if 'userName' is set and we are the parent process drop privilege and exit
+	if len(proxy.userName) > 0 && !proxy.child {
+		proxy.dropPrivilege(proxy.userName, FileDescriptors)
+		dlog.Fatal("Dropping privileges is not supporting on this operating system. Unset `user_name` in the configuration file.")
 	}
 	if !config.OfflineMode {
 		if err := config.loadSources(proxy); err != nil {
