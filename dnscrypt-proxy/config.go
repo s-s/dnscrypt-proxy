@@ -29,6 +29,7 @@ const (
 type Config struct {
 	LogLevel                 int                         `toml:"log_level,omitempty" json:"log_level,omitempty"`
 	LogFile                  *string                     `toml:"log_file,omitempty" json:"log_file,omitempty"`
+	LogFileLatest            bool                        `toml:"log_file_latest,omitempty" json:"log_file_latest,omitempty""`
 	UseSyslog                bool                        `toml:"use_syslog,omitempty" json:"use_syslog,omitempty"`
 	ServerNames              []string                    `toml:"server_names,omitempty" json:"server_names,omitempty"`
 	DisabledServerNames      []string                    `toml:"disabled_server_names,omitempty" json:"disabled_server_names,omitempty"`
