@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,7 +15,7 @@ import (
 	"github.com/dchest/safefile"
 
 	"github.com/jedisct1/dlog"
-	stamps "github.com/jedisct1/go-dnsstamps"
+	"github.com/jedisct1/go-dnsstamps"
 	"github.com/jedisct1/go-minisign"
 )
 
@@ -211,7 +212,7 @@ func PrefetchSources(xTransport *XTransport, sources []*Source) time.Duration {
 		}
 		dlog.Debugf("Prefetching [%s]", source.name)
 		if delay, err := source.fetchWithCache(xTransport, now); err != nil {
-			dlog.Infof("Prefetching [%s] failed: %v", source.name, err)
+			dlog.Infof("Prefetching [%s] failed: %v, will retry in %v", source.name, err, interval)
 		} else {
 			dlog.Debugf("Prefetching [%s] succeeded, next update: %v", source.name, delay)
 			if delay >= MinimumPrefetchInterval && (interval == MinimumPrefetchInterval || interval > delay) {
@@ -244,7 +245,6 @@ func (source *Source) parseV2(prefix string) ([]RegisteredServer, error) {
 		return registeredServers, fmt.Errorf("Invalid format for source at [%v]", source.urls)
 	}
 	parts = parts[1:]
-PartsLoop:
 	for _, part := range parts {
 		part = strings.TrimFunc(part, unicode.IsSpace)
 		subparts := strings.Split(part, "\n")
@@ -258,14 +258,11 @@ PartsLoop:
 		subparts = subparts[1:]
 		name = prefix + name
 		var stampStr, description string
+		stampStrs := make([]string, 0)
 		for _, subpart := range subparts {
 			subpart = strings.TrimFunc(subpart, unicode.IsSpace)
-			if strings.HasPrefix(subpart, "sdns:") {
-				if len(stampStr) > 0 {
-					appendStampErr("Multiple stamps for server [%s]", name)
-					continue PartsLoop
-				}
-				stampStr = subpart
+			if strings.HasPrefix(subpart, "sdns:") && len(subpart) >= 6 {
+				stampStrs = append(stampStrs, subpart)
 				continue
 			} else if len(subpart) == 0 || strings.HasPrefix(subpart, "//") {
 				continue
@@ -275,13 +272,23 @@ PartsLoop:
 			}
 			description += subpart
 		}
-		if len(stampStr) < 6 {
+		stampStrsLen := len(stampStrs)
+		if stampStrsLen <= 0 {
 			appendStampErr("Missing stamp for server [%s]", name)
 			continue
+		} else if stampStrsLen > 1 {
+			rand.Shuffle(stampStrsLen, func(i, j int) { stampStrs[i], stampStrs[j] = stampStrs[j], stampStrs[i] })
 		}
-		stamp, err := stamps.NewServerStampFromString(stampStr)
-		if err != nil {
+		var stamp dnsstamps.ServerStamp
+		var err error
+		for _, stampStr = range stampStrs {
+			stamp, err = dnsstamps.NewServerStampFromString(stampStr)
+			if err == nil {
+				break
+			}
 			appendStampErr("Invalid or unsupported stamp [%v]: %s", stampStr, err.Error())
+		}
+		if err != nil {
 			continue
 		}
 		registeredServer := RegisteredServer{

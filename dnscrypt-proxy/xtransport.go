@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha512"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -171,6 +172,18 @@ func (xTransport *XTransport) rebuildTransport() {
 		cert, err := tls.LoadX509KeyPair(clientCreds.clientCert, clientCreds.clientKey)
 		if err != nil {
 			dlog.Fatalf("Unable to use certificate [%v] (key: [%v]): %v", clientCreds.clientCert, clientCreds.clientKey, err)
+		}
+		if clientCreds.rootCA != "" {
+			caCert, err := ioutil.ReadFile(clientCreds.rootCA)
+			if err != nil {
+				dlog.Fatal(err)
+			}
+			systemCertPool, err := x509.SystemCertPool()
+			if err != nil {
+				dlog.Fatal(err)
+			}
+			systemCertPool.AppendCertsFromPEM(caCert)
+			tlsClientConfig.RootCAs = systemCertPool
 		}
 		tlsClientConfig.Certificates = []tls.Certificate{cert}
 	}
@@ -345,6 +358,7 @@ func (xTransport *XTransport) Fetch(method string, url *url.URL, accept string, 
 	if len(contentType) > 0 {
 		header["Content-Type"] = []string{contentType}
 	}
+	header["Cache-Control"] = []string{"max-stale"}
 	if body != nil {
 		h := sha512.Sum512(*body)
 		qs := url.Query()

@@ -1,3 +1,45 @@
+* Version 2.0.44
+ - More updates to the set of block lists, thanks again to IceCodeNew.
+ - Netprobes and listening sockets are now ignored when the `-list`,
+`-list-all`, `-show-certs` or `-check` command-line switches are used.
+ - `tls_client_auth` was renamed to `doh_client_x509_auth`. A section
+with the previous name is temporarily ignored if empty, but will error
+out if not.
+ - Unit tests are now working on 32-bit systems. Thanks to Will Elwood
+and @lifenjoiner.
+
+* Version 2.0.43
+ - Built-in support for DNS64 translation has been implemented.
+(Contributed by Sergey Smirnov, thanks!)
+ - Connections to DoH servers can be authenticated using TLS client
+certificates (Contributed by Kevin O'Sullivan, thanks!)
+ - Multiple stamps are now allowed for a single server in resolvers
+and relays lists.
+ - Android: the time zone for log files is now set to the system
+time zone.
+ - Quite a lot of updates and additions have been made to the
+example domain block lists. Thanks to `IceCodeNew`!
+ - Cached configuration files can now be temporarily used if
+they are out of date, but bootstraping is impossible. Contributed by
+`lifenjoiner`, thanks!
+ - Precompiled macOS binaries are now notarized.
+ - `generate-domains-blacklists` now tries to deduplicate entries
+clobbered by wildcard rules. Thanks to `Huhni`!
+ - `generate-domains-blacklists` can now directly write lists to a
+file with the `-o` command-line option.
+ - cache files are now downloaded as the user the daemon will be running
+as. This fixes permission issues at startup time.
+ - Forwarded queries are now subject to global timeouts, and can be
+forced to use TCP.
+ - The `ct` parameter has been removed from DoH queries, as Google doesn't
+require it any more.
+ - Service installation is now supported on FreeBSD.
+ - When stored into a file, service logs now only contain data from the most
+recent launch. This can be changed with the new `log_file_latest` option.
+ - Breaking change: the `tls_client_auth` section was renamed to
+`doh_client_x509_auth`. If you had a tls_client_auth section in the
+configuration file, it needs to be updated.
+
 * Version 2.0.42
  - The current versions of the `dnsdist` load balancer (presumably used
 by quad9, cleanbrowsing, qualityology, freetsa.org, ffmuc.net,

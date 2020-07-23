@@ -7,15 +7,15 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"runtime"
 	"sync"
 
-	"github.com/facebookgo/pidfile"
 	"github.com/jedisct1/dlog"
 	"github.com/kardianos/service"
 )
 
 const (
-	AppVersion            = "2.0.42"
+	AppVersion            = "2.0.44"
 	DefaultConfigFileName = "dnscrypt-proxy.toml"
 )
 
@@ -27,6 +27,7 @@ type App struct {
 }
 
 func main() {
+	TimezoneSetup()
 	dlog.Init("dnscrypt-proxy", dlog.SeverityNotice, "DAEMON")
 
 	seed := make([]byte, 8)
@@ -125,22 +126,23 @@ func (app *App) AppMain() {
 	if err := ConfigLoad(app.proxy, app.flags); err != nil {
 		dlog.Fatal(err)
 	}
+	if err := PidFileCreate(); err != nil {
+		dlog.Criticalf("Unable to create the PID file: %v", err)
+	}
 	if err := app.proxy.InitPluginsGlobals(); err != nil {
 		dlog.Fatal(err)
 	}
 	app.quit = make(chan struct{})
 	app.wg.Add(1)
-	_ = pidfile.Write()
 	app.proxy.StartProxy()
+	runtime.GC()
 	<-app.quit
 	dlog.Notice("Quit signal received...")
 	app.wg.Done()
 }
 
 func (app *App) Stop(service service.Service) error {
-	if pidFilePath := pidfile.GetPidfilePath(); len(pidFilePath) > 1 {
-		os.Remove(pidFilePath)
-	}
+	PidFileRemove()
 	dlog.Notice("Stopped.")
 	return nil
 }

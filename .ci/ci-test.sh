@@ -20,7 +20,7 @@ section() {
     true
 }
 
-rm -f blocked.log ip-blocked.log query.log nx.log whitelisted.log
+rm -f blocked-names.log blocked-ips.log query.log nx.log allowed-names.log
 
 t || (
     cd ../dnscrypt-proxy
@@ -82,7 +82,7 @@ t || dig -p${DNS_PORT} tracker.xdebian.org @127.0.0.1 | grep -Fq 'locally blocke
 t || dig -p${DNS_PORT} tracker.debian.org @127.0.0.1 | grep -Fqv 'locally blocked' || fail
 
 section
-t || curl --insecure -siL https://127.0.0.1:${HTTP_PORT}/ | grep -Fq '404 Not Found' || fail
+t || curl --insecure -siL https://127.0.0.1:${HTTP_PORT}/ | grep -Fq 'HTTP/2 404' || fail
 t || curl --insecure -sL https://127.0.0.1:${HTTP_PORT}/dns-query | grep -Fq 'dnscrypt-proxy local DoH server' || fail
 t ||
     echo yv4BAAABAAAAAAABAAACAAEAACkQAAAAgAAAAA== | base64 -d |
@@ -94,14 +94,14 @@ kill $(cat /tmp/dnscrypt-proxy.pidfile)
 sleep 5
 
 section
-t || grep -Fq 'telemetry.example' blocked.log || fail
-t || grep -Fq 'telemetry.*' blocked.log || fail
-t || grep -Fq 'tracker.xdebian.org' blocked.log || fail
-t || grep -Fq 'tracker.*' blocked.log || fail
+t || grep -Fq 'telemetry.example' blocked-names.log || fail
+t || grep -Fq 'telemetry.*' blocked-names.log || fail
+t || grep -Fq 'tracker.xdebian.org' blocked-names.log || fail
+t || grep -Fq 'tracker.*' blocked-names.log || fail
 
 section
-t || grep -Fq 'dns.google' ip-blocked.log || fail
-t || grep -Fq '8.8.8.8' ip-blocked.log || fail
+t || grep -Fq 'dns.google' blocked-ips.log || fail
+t || grep -Fq '8.8.8.8' blocked-ips.log || fail
 
 section
 t || grep -Fq 'a.www.dnscrypt-test' nx.log || fail
@@ -127,8 +127,8 @@ t || grep -Eq 'tracker.xdebian.org.*REJECT' query.log || fail
 t || grep -Eq 'tracker.debian.org.*PASS' query.log || fail
 
 section
-t || grep -Fq 'tracker.debian.org' whitelisted.log || fail
-t || grep -Fq '*.tracker.debian' whitelisted.log || fail
+t || grep -Fq 'tracker.debian.org' allowed-names.log || fail
+t || grep -Fq '*.tracker.debian' allowed-names.log || fail
 
 if [ -s error.log ]; then
     cat *.log
