@@ -98,6 +98,14 @@ func (proxy *Proxy) GetWhitelistNameLogFile() string {
 	return proxy.whitelistNameLogFile
 }
 
+func (proxy *Proxy) GetDns64Resolvers() []string {
+	return proxy.dns64Resolvers
+}
+
+func (proxy *Proxy) GetDns64Prefixes() []string {
+	return proxy.dns64Prefixes
+}
+
 func (proxy *Proxy) GetLogMaxSize() int {
 	return proxy.logMaxSize
 }
