@@ -70,6 +70,7 @@ type Proxy struct {
 	blockIPFormat                  string
 	forwardFile                    string
 	cloakFile                      string
+	captivePortalFile              string
 	pluginsGlobals                 PluginsGlobals
 	sources                        []*Source
 	clientsCount                   uint32
@@ -89,6 +90,7 @@ type Proxy struct {
 	anonDirectCertFallback         bool
 	dns64Prefixes                  []string
 	dns64Resolvers                 []string
+	ednsClientSubnets              []*net.IPNet
 
 	ReadyCallback chan bool
 	readyFired    bool
