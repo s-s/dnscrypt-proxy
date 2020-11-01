@@ -74,6 +74,10 @@ func (proxy *Proxy) GetPluginBlockUndelegated() bool {
 	return proxy.pluginBlockUndelegated
 }
 
+func (proxy *Proxy) GetEdnsClientSubnets() []*net.IPNet {
+	return proxy.ednsClientSubnets
+}
+
 func (proxy *Proxy) GetBlockNameFile() string {
 	return proxy.blockNameFile
 }
