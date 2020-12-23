@@ -10,18 +10,19 @@ require (
 	github.com/hashicorp/go-immutable-radix v1.3.0
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/hectane/go-acl v0.0.0-20190604041725-da78bae5fc95
-	github.com/jedisct1/dlog v0.0.0-20201015120035-7b9837cfc336
+	github.com/jedisct1/dlog v0.0.0-20201201133931-57e17ecd14f1
 	github.com/jedisct1/go-clocksmith v0.0.0-20190707124905-73e087c7979c
-	github.com/jedisct1/go-dnsstamps v0.0.0-20201015120701-b7d110434bec
+	github.com/jedisct1/go-dnsstamps v0.0.0-20201211123510-8d2deeae02b9
 	github.com/jedisct1/go-minisign v0.0.0-20190909160543-45766022959e
 	github.com/jedisct1/xsecretbox v0.0.0-20200921000858-23f5ec706e6a
 	github.com/k-sone/critbitgo v1.4.0
-	github.com/kardianos/service v1.1.0
-	github.com/miekg/dns v1.1.34
-	github.com/powerman/check v1.2.1
-	golang.org/x/crypto v0.0.0-20201016220609-9e8e0b390897
-	golang.org/x/net v0.0.0-20201016165138-7b1cca2348c0
-	golang.org/x/sys v0.0.0-20201018230417-eeed37f84f13
+	github.com/kardianos/service v1.2.0
+	github.com/miekg/dns v1.1.35
+	github.com/powerman/check v1.3.0
+	golang.org/x/crypto v0.0.0-20201208171446-5f87f3452ae9
+	golang.org/x/net v0.0.0-20201209123823-ac852fbbde11
+	golang.org/x/sys v0.0.0-20201211090839-8ad439b19e0f
+	golang.org/x/text v0.3.4 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
-	gopkg.in/yaml.v2 v2.3.0 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

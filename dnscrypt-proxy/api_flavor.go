@@ -54,6 +54,18 @@ func (proxy *Proxy) GetBlockIPFormat() string {
 	return proxy.blockIPFormat
 }
 
+func (proxy *Proxy) GetAllowedIPFile() string {
+	return proxy.allowedIPFile
+}
+
+func (proxy *Proxy) GetAllowedIPLogFile() string {
+	return proxy.allowedIPLogFile
+}
+
+func (proxy *Proxy) GetAllowedIPFormat() string {
+	return proxy.allowedIPFormat
+}
+
 func (proxy *Proxy) GetQueryLogFile() string {
 	return proxy.queryLogFile
 }

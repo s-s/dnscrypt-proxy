@@ -67,6 +67,7 @@ type Config struct {
 	AllowedName              AllowedNameConfig           `toml:"allowed_names,omitempty" json:"allowed_names,omitempty"`
 	BlockIP                  BlockIPConfig               `toml:"blocked_ips,omitempty" json:"blocked_ips,omitempty"`
 	BlockIPLegacy            BlockIPConfigLegacy         `toml:"ip_blacklist,omitempty" json:"ip_blacklist,omitempty"`
+	AllowIP                  AllowIPConfig               `toml:"allowed_ips,omitempty" json:"allowed_ips,omitempty"`
 	ForwardFile              string                      `toml:"forwarding_rules,omitempty" json:"forwarding_rules,omitempty"`
 	CloakFile                string                      `toml:"cloaking_rules,omitempty" json:"cloaking_rules,omitempty"`
 	CaptivePortalFile        string                      `toml:"captive_portal_handler,omitempty"  json:"captive_portal_handler,omitempty"`
@@ -215,6 +216,12 @@ type BlockIPConfig struct {
 
 type BlockIPConfigLegacy struct {
 	File    string `toml:"blacklist_file,omitempty" json:"blacklist_file,omitempty"`
+	LogFile string `toml:"log_file,omitempty" json:"log_file,omitempty"`
+	Format  string `toml:"log_format,omitempty" json:"log_format,omitempty"`
+}
+
+type AllowIPConfig struct {
+	File    string `toml:"allowed_ips_file,omitempty" json:"allowed_ips_file,omitempty"`
 	LogFile string `toml:"log_file,omitempty" json:"log_file,omitempty"`
 	Format  string `toml:"log_format,omitempty" json:"log_format,omitempty"`
 }
@@ -570,6 +577,18 @@ func ConfigLoad(proxy *Proxy, flags *ConfigFlags) error {
 	proxy.blockIPFormat = config.BlockIP.Format
 	proxy.blockIPLogFile = config.BlockIP.LogFile
 
+	if len(config.AllowIP.Format) == 0 {
+		config.AllowIP.Format = "tsv"
+	} else {
+		config.AllowIP.Format = strings.ToLower(config.AllowIP.Format)
+	}
+	if config.AllowIP.Format != "tsv" && config.AllowIP.Format != "ltsv" {
+		return errors.New("Unsupported allowed_ips log format")
+	}
+	proxy.allowedIPFile = config.AllowIP.File
+	proxy.allowedIPFormat = config.AllowIP.Format
+	proxy.allowedIPLogFile = config.AllowIP.LogFile
+
 	proxy.forwardFile = config.ForwardFile
 	proxy.cloakFile = config.CloakFile
 	proxy.captivePortalFile = config.CaptivePortalFile
@@ -761,6 +780,15 @@ func (config *Config) loadSources(proxy *Proxy) error {
 			return err
 		}
 	}
+	for name, config := range config.StaticsConfig {
+		if stamp, err := stamps.NewServerStampFromString(config.Stamp); err == nil {
+			if stamp.Proto == stamps.StampProtoTypeDNSCryptRelay || stamp.Proto == stamps.StampProtoTypeODoHRelay {
+				dlog.Debugf("Adding [%s] to the set of available static relays", name)
+				registeredServer := RegisteredServer{name: name, stamp: stamp, description: "static relay"}
+				proxy.registeredRelays = append(proxy.registeredRelays, registeredServer)
+			}
+		}
+	}
 	if len(config.ServerNames) == 0 {
 		for serverName := range config.StaticsConfig {
 			config.ServerNames = append(config.ServerNames, serverName)
@@ -825,7 +853,7 @@ func (config *Config) loadSource(proxy *Proxy, requiredProps stamps.ServerInform
 		dlog.Warnf("Error in source [%s]: [%s] -- Continuing with reduced server count [%d]", cfgSourceName, err, len(registeredServers))
 	}
 	for _, registeredServer := range registeredServers {
-		if registeredServer.stamp.Proto != stamps.StampProtoTypeDNSCryptRelay {
+		if registeredServer.stamp.Proto != stamps.StampProtoTypeDNSCryptRelay && registeredServer.stamp.Proto != stamps.StampProtoTypeODoHRelay {
 			if len(config.ServerNames) > 0 {
 				if !includesName(config.ServerNames, registeredServer.name) {
 					continue
@@ -849,7 +877,7 @@ func (config *Config) loadSource(proxy *Proxy, requiredProps stamps.ServerInform
 				continue
 			}
 		}
-		if registeredServer.stamp.Proto == stamps.StampProtoTypeDNSCryptRelay {
+		if registeredServer.stamp.Proto == stamps.StampProtoTypeDNSCryptRelay || registeredServer.stamp.Proto == stamps.StampProtoTypeODoHRelay {
 			dlog.Debugf("Adding [%s] to the set of available relays", registeredServer.name)
 			proxy.registeredRelays = append(proxy.registeredRelays, registeredServer)
 		} else {
